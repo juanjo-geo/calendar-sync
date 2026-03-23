@@ -23,40 +23,42 @@ def main() -> None:
     print("\n=== Calendar Sync — Setup Check ===\n")
     results = []
 
-    # 1. MICROSOFT_CLIENT_SECRET
-    ms_secret = os.environ.get("MICROSOFT_CLIENT_SECRET", "")
-    results.append(check("MICROSOFT_CLIENT_SECRET definida", bool(ms_secret)))
+    # 1. OUTLOOK_ICS_URL definida
+    ics_url = os.environ.get("OUTLOOK_ICS_URL", "")
+    results.append(check("OUTLOOK_ICS_URL definida", bool(ics_url)))
 
-    # 2. GOOGLE_CREDENTIALS_JSON definida
+    # 2. OUTLOOK_ICS_URL es una URL válida
+    if ics_url:
+        url_valid = ics_url.startswith("https://")
+        results.append(check("OUTLOOK_ICS_URL empieza con https://", url_valid))
+
+    # 3. GOOGLE_CREDENTIALS_JSON definida
     gcp_raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
     results.append(check("GOOGLE_CREDENTIALS_JSON definida", bool(gcp_raw)))
 
-    # 3. GOOGLE_CREDENTIALS_JSON es JSON válido
-    gcp_valid = False
+    # 4. GOOGLE_CREDENTIALS_JSON es JSON válido
     if gcp_raw:
         try:
             json.loads(gcp_raw)
             gcp_valid = True
         except json.JSONDecodeError as exc:
+            gcp_valid = False
             results.append(check("GOOGLE_CREDENTIALS_JSON es JSON válido", False, str(exc)))
-    if gcp_raw:
-        results.append(check("GOOGLE_CREDENTIALS_JSON es JSON válido", gcp_valid))
+        if gcp_valid:
+            results.append(check("GOOGLE_CREDENTIALS_JSON es JSON válido", True))
 
-    # 4-5. config.json con valores reales
+    # 5. config.json carga correctamente
     try:
         config = load_config()
-        ms = config.get("microsoft", {})
-
-        tenant_ok = ms.get("tenant_id", "") != "YOUR_TENANT_ID"
-        results.append(check("tenant_id configurado (no placeholder)", tenant_ok))
-
-        client_ok = ms.get("client_id", "") != "YOUR_CLIENT_ID"
-        results.append(check("client_id configurado (no placeholder)", client_ok))
+        results.append(check("config.json cargado correctamente", True))
 
         print(f"\n  Timezone configurado : {config.get('timezone', 'N/A')}")
 
+        # 6. Ventana horaria actual
         allowed = is_sync_allowed(config)
-        print(f"  Sync permitido ahora : {OK if allowed else FAIL}  ({allowed})")
+        label = "Sync permitido ahora"
+        detail = "dentro de la ventana" if allowed else "fuera de la ventana"
+        print(f"  {OK if allowed else FAIL}  {label}  ({detail})")
 
     except Exception as exc:
         results.append(check("config.json cargado correctamente", False, str(exc)))
