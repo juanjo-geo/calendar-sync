@@ -115,33 +115,53 @@ def compute_fingerprint(internal: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _to_utc_iso(dt_str: str, tz_hint: str | None, config: dict) -> str:
-    """Parses a Graph API datetime string and returns an ISO 8601 UTC string."""
+    """Parses a datetime string and returns an ISO 8601 UTC string.
+
+    Handles three cases:
+    - String with explicit offset or Z  → parse directly as aware, convert to UTC
+    - String without offset + valid tz_hint → localize with tz_hint, convert to UTC
+    - String without offset + missing/unknown tz_hint → localize with config timezone
+    """
     if not dt_str:
         return ""
 
-    # Graph API returns datetimes without timezone info; use tz_hint or config timezone
+    # Detect whether the string already carries explicit timezone info
+    has_z = dt_str.endswith("Z")
+    has_offset = False
+    if "T" in dt_str:
+        time_part = dt_str.split("T", 1)[1]
+        has_offset = "+" in time_part or time_part.count("-") > 0
+
+    if has_z or has_offset:
+        # Parse as timezone-aware directly — do NOT re-localize
+        try:
+            from dateutil import parser as dateutil_parser
+            aware_dt = dateutil_parser.parse(dt_str)
+            return aware_dt.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass  # fall through to naive parsing
+
+    # Naive string — pick timezone: tz_hint if valid, otherwise config timezone
     tz_name = tz_hint or config.get("timezone", "UTC")
     try:
         local_tz = pytz.timezone(tz_name)
     except pytz.UnknownTimeZoneError:
-        local_tz = pytz.utc
+        # tz_hint not recognized by pytz (e.g. "COT", "-05:00") — use config timezone
+        local_tz = pytz.timezone(config.get("timezone", "UTC"))
 
-    # Strip trailing 'Z' or timezone offset (+HH:MM / -HH:MM after the time component)
-    # Only strip characters AFTER position 16 ("YYYY-MM-DDTHH:MM") to avoid cutting the date.
+    # Strip any leftover offset markers before parsing as naive
     base = dt_str.rstrip("Z")
     if "T" in base:
         date_part, time_part = base.split("T", 1)
-        # Remove any +offset or -offset from the time part only
         for sep in ("+", "-"):
             if sep in time_part:
                 time_part = time_part.split(sep)[0]
                 break
         base = f"{date_part}T{time_part}"
-    dt_str_clean = base
 
     for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
         try:
-            naive_dt = datetime.strptime(dt_str_clean, fmt)
+            naive_dt = datetime.strptime(base, fmt)
             break
         except ValueError:
             continue
@@ -149,6 +169,6 @@ def _to_utc_iso(dt_str: str, tz_hint: str | None, config: dict) -> str:
         get_logger().warning("Could not parse datetime string: %s", dt_str)
         return dt_str
 
-    aware_dt = local_tz.localize(naive_dt, is_dst=None)
+    aware_dt = local_tz.localize(naive_dt, is_dst=False)
     utc_dt = aware_dt.astimezone(pytz.utc)
     return utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")

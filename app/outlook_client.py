@@ -125,10 +125,14 @@ class OutlookClient:
     @staticmethod
     def _extract_tzname(dt: datetime) -> str:
         if dt.tzinfo is not None:
+            # pytz zones expose .zone with the IANA name (e.g. "America/Bogota")
+            if hasattr(dt.tzinfo, "zone"):
+                return dt.tzinfo.zone
             name = dt.tzinfo.tzname(dt)
             if name:
                 return name
-        return "UTC"
+        # Return empty string so _to_utc_iso falls back to config["timezone"]
+        return ""
 
     @staticmethod
     def _dt_to_str(dt: datetime) -> str:
