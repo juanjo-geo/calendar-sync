@@ -2,7 +2,9 @@ name: Calendar Sync
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # Ejecuta cada 20 min entre 7am-5pm UTC (lunes a viernes)
+    # El control fino de 17:30 lo maneja scheduler_rules.py internamente
+    - cron: '*/20 7-17 * * 1-5'
   workflow_dispatch:
 
 jobs:

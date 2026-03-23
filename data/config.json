@@ -3,9 +3,9 @@
   "sync_window_days_past": 7,
   "sync_window_days_future": 60,
   "schedule": {
-    "allowed_days": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
-    "allowed_hours_start": "06:00",
-    "allowed_hours_end": "23:00"
+    "allowed_days": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+    "allowed_hours_start": "07:00",
+    "allowed_hours_end": "17:30"
   },
   "behavior": {
     "delete_cancelled_events": true,
