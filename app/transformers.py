@@ -44,6 +44,13 @@ def outlook_to_internal(raw_event: dict, config: dict) -> dict | None:
     else:
         event_key = outlook_id
 
+    # Skip cancelled events entirely — don't create them in Google Calendar
+    title = raw_event.get("subject", "(No title)")
+    _CANCELLED_PREFIXES = ("Canceled:", "Cancelado:", "Cancelada:", "Cancelled:")
+    if is_cancelled or any(title.startswith(p) for p in _CANCELLED_PREFIXES):
+        logger.debug("Skipping cancelled event: %s", outlook_id)
+        return None
+
     description = raw_event.get("bodyPreview") or raw_event.get("body", {}).get("content")
     location_obj = raw_event.get("location", {})
     location = location_obj.get("displayName") if location_obj else None
@@ -51,7 +58,7 @@ def outlook_to_internal(raw_event: dict, config: dict) -> dict | None:
     return {
         "outlook_id": outlook_id,
         "event_key": event_key,
-        "title": raw_event.get("subject", "(No title)"),
+        "title": title,
         "start": start_str,
         "end": end_str,
         "location": location or None,
