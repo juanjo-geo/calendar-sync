@@ -1,8 +1,9 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytz
 import requests
+from dateutil import rrule as dateutil_rrule
 from icalendar import Calendar
 
 from app.logger import get_logger
@@ -42,19 +43,28 @@ class OutlookClient:
             if component.name != "VEVENT":
                 continue
 
+            has_rrule = component.get("RRULE") is not None
+
+            if has_rrule:
+                # Expand RRULE occurrences within the sync window and emit one
+                # dict per occurrence instead of the master event.
+                expanded = self._expand_rrule(component, start_dt, end_dt)
+                for raw in expanded:
+                    event_key = raw["id"]
+                    if event_key in seen_keys:
+                        self._logger.debug("Skipping duplicate event_key: %s", event_key)
+                        continue
+                    seen_keys.add(event_key)
+                    events.append(raw)
+                continue
+
             raw = self._vevent_to_dict(component)
             if raw is None:
                 continue
 
-            # Recurring events (RRULE) have DTSTART at the first occurrence, which may be
-            # far in the past. Skip the date filter for them — they recur into the window.
-            has_rrule = component.get("RRULE") is not None
-            if not has_rrule:
-                event_start = self._parse_dtstart_utc(component)
-                if event_start is None:
-                    continue
-                if not (start_dt <= event_start <= end_dt):
-                    continue
+            event_start = self._parse_dtstart_utc(component)
+            if event_start is None or not (start_dt <= event_start <= end_dt):
+                continue
 
             # Deduplicate: skip if this event_key was already processed
             event_key = raw["id"]
@@ -71,6 +81,96 @@ class OutlookClient:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _expand_rrule(self, component, start_dt: datetime, end_dt: datetime) -> list:
+        """Expand a RRULE VEVENT into individual occurrence dicts within [start_dt, end_dt]."""
+        try:
+            dtstart_raw = component.decoded("DTSTART")
+            dtend_raw = component.decoded("DTEND", None) or component.decoded("DURATION", None)
+        except Exception:
+            return []
+
+        is_all_day = isinstance(dtstart_raw, date) and not isinstance(dtstart_raw, datetime)
+
+        # Compute original duration
+        if isinstance(dtstart_raw, datetime) and isinstance(dtend_raw, datetime):
+            duration = dtend_raw - dtstart_raw
+        elif isinstance(dtstart_raw, date) and isinstance(dtend_raw, date):
+            duration = timedelta(days=(dtend_raw - dtstart_raw).days)
+        else:
+            duration = timedelta(hours=1)
+
+        # Build a timezone-aware dtstart for dateutil
+        if isinstance(dtstart_raw, datetime):
+            if dtstart_raw.tzinfo is None:
+                tz_name = self._config.get("timezone", "UTC")
+                local_tz = pytz.timezone(tz_name)
+                dtstart_aware = local_tz.localize(dtstart_raw)
+            else:
+                dtstart_aware = dtstart_raw
+        else:
+            # all-day date
+            tz_name = self._config.get("timezone", "UTC")
+            local_tz = pytz.timezone(tz_name)
+            dtstart_aware = local_tz.localize(
+                datetime(dtstart_raw.year, dtstart_raw.month, dtstart_raw.day)
+            )
+
+        # Parse the RRULE string via dateutil
+        rrule_prop = component.get("RRULE")
+        rrule_str = f"RRULE:{rrule_prop.to_ical().decode()}"
+        try:
+            ruleset = dateutil_rrule.rrulestr(
+                rrule_str,
+                dtstart=dtstart_aware,
+                ignoretz=False,
+            )
+        except Exception as exc:
+            self._logger.warning("Failed to parse RRULE: %s — %s", rrule_str, exc)
+            return []
+
+        uid = str(component.get("UID", ""))
+        summary = str(component.get("SUMMARY", ""))
+        location_val = component.get("LOCATION")
+        location = {"displayName": str(location_val)} if location_val else None
+        description = str(component.get("DESCRIPTION", ""))
+        is_cancelled = str(component.get("STATUS", "")).upper() == "CANCELLED"
+        tz_name = self._extract_tzname(dtstart_aware)
+
+        results = []
+        for occurrence in ruleset.between(start_dt, end_dt, inc=True):
+            occ_end = occurrence + duration
+
+            if is_all_day:
+                occ_start_str = occurrence.strftime("%Y-%m-%dT00:00:00")
+                occ_end_str = occ_end.strftime("%Y-%m-%dT00:00:00")
+                occ_tz = self._config.get("timezone", "UTC")
+            else:
+                occ_start_str = occurrence.isoformat(timespec="seconds")
+                occ_end_str = occ_end.isoformat(timespec="seconds")
+                occ_tz = tz_name
+
+            event_id = f"{uid}|{occ_start_str}"
+
+            results.append({
+                "id": event_id,
+                "subject": summary,
+                "start": {"dateTime": occ_start_str, "timeZone": occ_tz},
+                "end": {"dateTime": occ_end_str, "timeZone": occ_tz},
+                "location": location,
+                "body": {"content": description},
+                "isCancelled": is_cancelled,
+                "isAllDay": is_all_day,
+                "type": "singleInstance",
+                "showAs": "busy",
+                "seriesMasterId": None,
+                "originalStart": None,
+            })
+
+        self._logger.debug(
+            "Expanded RRULE '%s' → %d occurrences in window", summary, len(results)
+        )
+        return results
 
     def _vevent_to_dict(self, event) -> dict | None:
         try:
@@ -105,9 +205,7 @@ class OutlookClient:
         location = {"displayName": str(location_val)} if location_val else None
 
         uid = str(event.get("UID", ""))
-        has_rrule = event.get("RRULE") is not None
-        # Series master keeps plain UID; expanded instances use UID|DTSTART for uniqueness
-        event_id = uid if has_rrule else f"{uid}|{start_str}"
+        event_id = f"{uid}|{start_str}"
 
         return {
             "id": event_id,

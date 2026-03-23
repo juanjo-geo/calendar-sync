@@ -1,27 +1,30 @@
 """
-Borra del Google Calendar todos los eventos creados por el sync,
-usando los IDs registrados en data/state.json.
+Borra del Google Calendar todos los eventos creados por el sync
+(identificados por la etiqueta [Sync: Outlook] en la descripción).
+Maneja paginación y resetea data/state.json al finalizar.
 
 Uso:
-    $env:GOOGLE_CREDENTIALS_JSON = (Get-Content "C:/Users/.../calendar-sync-*.json" -Raw)
+    $env:GOOGLE_CREDENTIALS_JSON = (Get-Content "credentials.json" -Raw)
     python scripts/reset_google_calendar.py
 """
 
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from google.oauth2 import service_account
 from google.oauth2 import credentials as oauth2_credentials
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 STATE_PATH = Path(__file__).parent.parent / "data" / "state.json"
 CONFIG_PATH = Path(__file__).parent.parent / "data" / "config.json"
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
+_SYNC_TAG = "[Sync: Outlook]"
 
 
 def build_service():
@@ -51,65 +54,97 @@ def build_service():
     return build("calendar", "v3", credentials=creds)
 
 
+def list_all_events(service, calendar_id: str) -> list:
+    """Fetches all events with full pagination."""
+    all_events = []
+    page_token = None
+
+    while True:
+        kwargs = {
+            "calendarId": calendar_id,
+            "maxResults": 250,
+            "singleEvents": True,
+        }
+        if page_token:
+            kwargs["pageToken"] = page_token
+
+        response = service.events().list(**kwargs).execute()
+        all_events.extend(response.get("items", []))
+        page_token = response.get("nextPageToken")
+
+        print(f"  Fetched {len(all_events)} eventos...", end="\r")
+
+        if not page_token:
+            break
+
+    print()
+    return all_events
+
+
 def main():
-    # Load config
     with CONFIG_PATH.open(encoding="utf-8") as f:
         config = json.load(f)
     calendar_id = config["google"]["calendar_id"]
 
-    # Load state
-    if not STATE_PATH.exists():
-        print("data/state.json no existe — nada que borrar.")
-        return
-
-    with STATE_PATH.open(encoding="utf-8") as f:
-        state = json.load(f)
-
-    events_map: dict = state.get("events_map", {})
-    if not events_map:
-        print("events_map vacío — nada que borrar.")
-        return
-
     print(f"\nCalendario : {calendar_id}")
-    print(f"Eventos a borrar : {len(events_map)}\n")
+    print(f"Buscando eventos con '{_SYNC_TAG}' en la descripción...\n")
 
     service = build_service()
-    deleted = 0
-    errors = 0
 
-    for outlook_id, google_id in events_map.items():
-        try:
-            # Fetch title for display before deleting
+    all_events = list_all_events(service, calendar_id)
+    print(f"Total eventos en el calendario : {len(all_events)}")
+
+    sync_events = [
+        e for e in all_events
+        if _SYNC_TAG in (e.get("description") or "")
+    ]
+    print(f"Eventos con '{_SYNC_TAG}'       : {len(sync_events)}\n")
+
+    if not sync_events:
+        print("Nada que borrar.")
+    else:
+        deleted = 0
+        errors = 0
+        for i, event in enumerate(sync_events):
+            event_id = event["id"]
+            title = event.get("summary", "(sin titulo)")
             try:
-                event = service.events().get(
-                    calendarId=calendar_id, eventId=google_id
+                service.events().delete(
+                    calendarId=calendar_id, eventId=event_id
                 ).execute()
-                title = event.get("summary", "(sin título)")
-            except HttpError:
-                title = f"(no encontrado: {google_id})"
+                print(f"  Deleted: {title}")
+                deleted += 1
+            except HttpError as exc:
+                if exc.resp.status in (404, 410):
+                    print(f"  Skipped (ya borrado): {title}")
+                elif exc.resp.status == 403:
+                    # Rate limit — wait and retry once
+                    time.sleep(2)
+                    try:
+                        service.events().delete(
+                            calendarId=calendar_id, eventId=event_id
+                        ).execute()
+                        print(f"  Deleted (retry): {title}")
+                        deleted += 1
+                    except HttpError:
+                        print(f"  ERROR (rate limit): {title}")
+                        errors += 1
+                else:
+                    print(f"  ERROR borrando '{title}': {exc}")
+                    errors += 1
+            # Throttle: small pause every 10 deletes to avoid rate limits
+            if (i + 1) % 10 == 0:
+                time.sleep(0.5)
 
-            service.events().delete(
-                calendarId=calendar_id, eventId=google_id
-            ).execute()
-            print(f"  Deleted: {title}")
-            deleted += 1
-
-        except HttpError as exc:
-            if exc.resp.status in (404, 410):
-                print(f"  Skipped (ya borrado): {google_id}")
-            else:
-                print(f"  ERROR borrando {google_id}: {exc}")
-                errors += 1
+        print(f"\nTotal deleted : {deleted} eventos")
+        if errors:
+            print(f"Errores       : {errors}")
 
     # Reset state.json
     clean_state = {"last_run": None, "events_map": {}, "event_fingerprints": {}}
     with STATE_PATH.open("w", encoding="utf-8") as f:
         json.dump(clean_state, f, indent=2)
-
-    print(f"\nTotal deleted : {deleted} eventos")
-    if errors:
-        print(f"Errores       : {errors}")
-    print("state.json    : reseteado ✓\n")
+    print("state.json    : reseteado OK\n")
 
 
 if __name__ == "__main__":
