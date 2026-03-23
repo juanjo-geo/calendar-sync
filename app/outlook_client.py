@@ -37,6 +37,7 @@ class OutlookClient:
             return []
 
         events = []
+        seen_keys: set = set()
         for component in cal.walk():
             if component.name != "VEVENT":
                 continue
@@ -54,6 +55,13 @@ class OutlookClient:
                     continue
                 if not (start_dt <= event_start <= end_dt):
                     continue
+
+            # Deduplicate: skip if this event_key was already processed
+            event_key = raw["id"]
+            if event_key in seen_keys:
+                self._logger.debug("Skipping duplicate event_key: %s", event_key)
+                continue
+            seen_keys.add(event_key)
 
             events.append(raw)
 
@@ -84,6 +92,14 @@ class OutlookClient:
             tz_name = self._extract_tzname(dtstart_raw)
             start_str = self._dt_to_str(dtstart_raw)
             end_str = self._dt_to_str(dtend_raw) if isinstance(dtend_raw, datetime) else start_str
+
+        # Re-compute start_str preserving offset when datetime is timezone-aware,
+        # so _to_utc_iso receives the full "...T09:00:00-05:00" string and can
+        # convert correctly to UTC instead of ignoring the offset.
+        if not is_all_day and isinstance(dtstart_raw, datetime) and dtstart_raw.tzinfo is not None:
+            start_str = dtstart_raw.isoformat(timespec="seconds")
+        if not is_all_day and isinstance(dtend_raw, datetime) and dtend_raw.tzinfo is not None:
+            end_str = dtend_raw.isoformat(timespec="seconds")
 
         location_val = event.get("LOCATION")
         location = {"displayName": str(location_val)} if location_val else None
