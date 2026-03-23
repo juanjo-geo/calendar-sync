@@ -88,8 +88,13 @@ class OutlookClient:
         location_val = event.get("LOCATION")
         location = {"displayName": str(location_val)} if location_val else None
 
+        uid = str(event.get("UID", ""))
+        has_rrule = event.get("RRULE") is not None
+        # Series master keeps plain UID; expanded instances use UID|DTSTART for uniqueness
+        event_id = uid if has_rrule else f"{uid}|{start_str}"
+
         return {
-            "id": str(event.get("UID", "")),
+            "id": event_id,
             "subject": str(event.get("SUMMARY", "")),
             "start": {"dateTime": start_str, "timeZone": tz_name},
             "end": {"dateTime": end_str, "timeZone": tz_name},
