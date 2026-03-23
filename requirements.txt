@@ -1,1 +1,9 @@
-# Python dependencies for the calendar sync project
+msal
+requests
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+pytz
+python-dateutil
+pytest
