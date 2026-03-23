@@ -1,1 +1,24 @@
-# Specifies files and directories excluded from version control
+# Estado y logs
+data/state.json
+logs/
+
+# Credenciales (NUNCA al repo)
+*.env
+.env
+credentials*.json
+token*.json
+*_credentials.json
+service_account*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+dist/
+*.egg-info/
+.eggs/
+
+# IDEs
+.vscode/
+.idea/
