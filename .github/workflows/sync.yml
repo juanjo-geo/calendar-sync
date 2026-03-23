@@ -26,6 +26,6 @@ jobs:
 
       - name: Run calendar sync
         env:
-          MICROSOFT_CLIENT_SECRET: ${{ secrets.MICROSOFT_CLIENT_SECRET }}
+          OUTLOOK_ICS_URL: ${{ secrets.OUTLOOK_ICS_URL }}
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         run: python -m app.sync
