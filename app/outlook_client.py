@@ -45,12 +45,15 @@ class OutlookClient:
             if raw is None:
                 continue
 
-            # Filter by sync window
-            event_start = self._parse_dtstart_utc(component)
-            if event_start is None:
-                continue
-            if not (start_dt <= event_start <= end_dt):
-                continue
+            # Recurring events (RRULE) have DTSTART at the first occurrence, which may be
+            # far in the past. Skip the date filter for them — they recur into the window.
+            has_rrule = component.get("RRULE") is not None
+            if not has_rrule:
+                event_start = self._parse_dtstart_utc(component)
+                if event_start is None:
+                    continue
+                if not (start_dt <= event_start <= end_dt):
+                    continue
 
             events.append(raw)
 
