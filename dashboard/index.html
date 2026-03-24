@@ -666,11 +666,62 @@
 
     <!-- HEALTH VIEW -->
     <div id="view-health">
-      <div class="card" style="max-width:480px;">
-        <h2>Health Check</h2>
-        <div id="health-content" style="display:flex;flex-direction:column;gap:14px;">
-          <div id="health-loading" style="color:var(--muted);font-size:14px;"><span class="spinner"></span>&nbsp; Verificando...</div>
+      <div style="max-width:680px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Sync Now -->
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">Sincronización manual</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:3px;">Dispara el workflow ahora, sin esperar al cron.</div>
+          </div>
+          <button id="sync-now-btn" class="btn btn-primary" style="width:auto;white-space:nowrap;" onclick="App.syncNow()">
+            ⚡ Sincronizar Ahora
+          </button>
         </div>
+
+        <!-- Credenciales -->
+        <div class="card">
+          <h2>Credenciales (Secrets)</h2>
+          <div id="hlt-secrets-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Verificando...</div>
+          <div id="hlt-secrets-body" class="hidden" style="display:flex;flex-direction:column;gap:10px;"></div>
+        </div>
+
+        <!-- Workflow -->
+        <div class="card">
+          <h2>Estado del Workflow</h2>
+          <div id="hlt-wf-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Verificando...</div>
+          <div id="hlt-wf-body" class="hidden">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <div id="hlt-wf-badge"></div>
+              <div>
+                <div id="hlt-wf-name" style="font-size:13px;font-weight:600;">—</div>
+                <div id="hlt-wf-updated" style="font-size:12px;color:var(--muted);margin-top:2px;">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Último commit -->
+        <div class="card">
+          <h2>Último Commit</h2>
+          <div id="hlt-commit-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="hlt-commit-body" class="hidden">
+            <div style="display:flex;align-items:flex-start;gap:12px;">
+              <img id="hlt-commit-avatar" src="" width="32" height="32" style="border-radius:50%;flex-shrink:0;" />
+              <div style="min-width:0;">
+                <div id="hlt-commit-msg" style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">
+                  <span id="hlt-commit-author">—</span>
+                  &nbsp;·&nbsp;
+                  <span id="hlt-commit-ago">—</span>
+                  &nbsp;·&nbsp;
+                  <a id="hlt-commit-link" href="#" target="_blank" style="color:var(--blue);text-decoration:none;">ver commit →</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -1070,51 +1121,121 @@ const App = (() => {
   async function renderHealth() {
     const owner = get(KEY_OWNER) || 'juanjo-geo';
     const repo  = get(KEY_REPO)  || 'calendar-sync';
-    const el = document.getElementById('health-content');
 
-    el.innerHTML = '<div style="color:var(--muted);font-size:14px;"><span class="spinner"></span>&nbsp; Verificando...</div>';
+    // Reset loaders
+    ['hlt-secrets-loading','hlt-wf-loading','hlt-commit-loading'].forEach(id =>
+      document.getElementById(id).classList.remove('hidden')
+    );
+    ['hlt-secrets-body','hlt-wf-body','hlt-commit-body'].forEach(id =>
+      document.getElementById(id).classList.add('hidden')
+    );
 
-    const checks = [];
-
-    // GitHub API
-    try {
-      await ghFetch('/user');
-      checks.push({ label: 'GitHub API', ok: true, detail: 'Autenticado correctamente' });
-    } catch {
-      checks.push({ label: 'GitHub API', ok: false, detail: 'Token inválido o sin conexión' });
-    }
-
-    // Repo accesible
-    try {
-      const r = await ghFetch(`/repos/${owner}/${repo}`);
-      checks.push({ label: 'Repositorio', ok: true, detail: `${r.full_name} · ${r.visibility}` });
-    } catch {
-      checks.push({ label: 'Repositorio', ok: false, detail: `No se pudo acceder a ${owner}/${repo}` });
-    }
-
-    // Último run
-    try {
-      const data = await ghFetch(`/repos/${owner}/${repo}/actions/runs?per_page=1`);
-      const run = data.workflow_runs?.[0];
-      if (run) {
-        const ok = run.conclusion === 'success';
-        checks.push({ label: 'Último workflow', ok, detail: `#${run.run_number} · ${run.conclusion || run.status} · ${new Date(run.updated_at).toLocaleString('es')}` });
-      } else {
-        checks.push({ label: 'Último workflow', ok: null, detail: 'Sin ejecuciones registradas' });
-      }
-    } catch {
-      checks.push({ label: 'Último workflow', ok: false, detail: 'Error al consultar runs' });
-    }
-
-    el.innerHTML = checks.map(c => `
-      <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;">
-        <div style="width:10px;height:10px;border-radius:50%;background:${c.ok === true ? 'var(--green)' : c.ok === false ? 'var(--red)' : 'var(--muted)'};flex-shrink:0;"></div>
+    // ── Secrets ──
+    const secretChecks = await Promise.all(
+      ['OUTLOOK_ICS_URL', 'GOOGLE_CREDENTIALS_JSON'].map(async name => {
+        try {
+          await ghFetch(`/repos/${owner}/${repo}/actions/secrets/${name}`);
+          return { name, ok: true };
+        } catch (e) {
+          return { name, ok: e.message.includes('404') || e.message.includes('Not Found') ? false : null };
+        }
+      })
+    );
+    document.getElementById('hlt-secrets-loading').classList.add('hidden');
+    const secretsBody = document.getElementById('hlt-secrets-body');
+    secretsBody.classList.remove('hidden');
+    secretsBody.innerHTML = secretChecks.map(c => `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;">
+        <span style="font-size:16px;">${c.ok === true ? '✅' : c.ok === false ? '❌' : '⚠️'}</span>
         <div>
-          <div style="font-size:13px;font-weight:600;">${c.label}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${c.detail}</div>
+          <div style="font-size:13px;font-weight:600;font-family:monospace;">${c.name}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:1px;">
+            ${c.ok === true ? 'Configurado' : c.ok === false ? 'No configurado' : 'Sin acceso para verificar'}
+          </div>
         </div>
       </div>
     `).join('');
+
+    // ── Workflow ──
+    try {
+      const wf = await ghFetch(`/repos/${owner}/${repo}/actions/workflows/sync.yml`);
+      document.getElementById('hlt-wf-loading').classList.add('hidden');
+      document.getElementById('hlt-wf-body').classList.remove('hidden');
+      const active = wf.state === 'active';
+      document.getElementById('hlt-wf-badge').innerHTML =
+        `<span class="badge ${active ? 'badge-green' : 'badge-red'}">${active ? 'Activo' : 'Deshabilitado'}</span>`;
+      document.getElementById('hlt-wf-name').textContent = wf.name || 'sync.yml';
+      document.getElementById('hlt-wf-updated').textContent =
+        `Modificado: ${new Date(wf.updated_at).toLocaleString('es')}`;
+    } catch (e) {
+      document.getElementById('hlt-wf-loading').classList.add('hidden');
+      document.getElementById('hlt-wf-body').classList.remove('hidden');
+      document.getElementById('hlt-wf-badge').innerHTML =
+        '<span class="badge badge-gray">Sin datos</span>';
+      document.getElementById('hlt-wf-name').textContent = `Error: ${e.message}`;
+    }
+
+    // ── Último commit ──
+    try {
+      const commits = await ghFetch(`/repos/${owner}/${repo}/commits?per_page=1`);
+      const c = commits[0];
+      document.getElementById('hlt-commit-loading').classList.add('hidden');
+      document.getElementById('hlt-commit-body').classList.remove('hidden');
+
+      const msg    = c.commit.message.split('\n')[0];
+      const author = c.commit.author.name;
+      const date   = new Date(c.commit.author.date);
+      const diffMs = Date.now() - date;
+      const diffMin = Math.floor(diffMs / 60000);
+      const ago = diffMin < 60
+        ? `hace ${diffMin} min`
+        : diffMin < 1440
+        ? `hace ${Math.floor(diffMin / 60)} h`
+        : `hace ${Math.floor(diffMin / 1440)} días`;
+
+      document.getElementById('hlt-commit-avatar').src   = c.author?.avatar_url || '';
+      document.getElementById('hlt-commit-msg').textContent    = msg;
+      document.getElementById('hlt-commit-author').textContent = author;
+      document.getElementById('hlt-commit-ago').textContent    = ago;
+      document.getElementById('hlt-commit-link').href          = c.html_url;
+    } catch (e) {
+      document.getElementById('hlt-commit-loading').classList.add('hidden');
+      document.getElementById('hlt-commit-body').classList.remove('hidden');
+      document.getElementById('hlt-commit-msg').textContent = `Error: ${e.message}`;
+    }
+  }
+
+  // ── Sync Now ─────────────────────────────────────────────────
+  async function syncNow() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    if (!confirm('¿Disparar el workflow de sync ahora?')) return;
+
+    const btn = document.getElementById('sync-now-btn');
+    btn.disabled = true;
+
+    try {
+      await ghPut(`/repos/${owner}/${repo}/actions/workflows/sync.yml/dispatches`, { ref: 'main' });
+      showToast('Sync iniciado — revisa GitHub Actions', 'ok');
+
+      // Countdown 30 s
+      let secs = 30;
+      const tick = () => {
+        btn.textContent = `⚡ Sincronizar Ahora (${secs}s)`;
+        if (--secs < 0) {
+          clearInterval(cdTimer);
+          btn.disabled = false;
+          btn.textContent = '⚡ Sincronizar Ahora';
+        }
+      };
+      tick();
+      const cdTimer = setInterval(tick, 1000);
+    } catch (e) {
+      showToast(`Error al disparar sync: ${e.message}`, 'err');
+      btn.disabled = false;
+      btn.textContent = '⚡ Sincronizar Ahora';
+    }
   }
 
   // ── Configuración ────────────────────────────────────────────
@@ -1473,7 +1594,7 @@ const App = (() => {
     });
   }
 
-  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor, loadConsumo };
+  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor, loadConsumo, syncNow };
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
