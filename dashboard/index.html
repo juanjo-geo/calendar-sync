@@ -1216,7 +1216,23 @@ const App = (() => {
     btn.disabled = true;
 
     try {
-      await ghPut(`/repos/${owner}/${repo}/actions/workflows/sync.yml/dispatches`, { ref: 'main' });
+      const dispatchRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync.yml/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${get(KEY_TOKEN)}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ref: 'main' }),
+        }
+      );
+      if (!dispatchRes.ok) {
+        const err = await dispatchRes.json().catch(() => ({}));
+        throw new Error(err.message || `${dispatchRes.status} ${dispatchRes.statusText}`);
+      }
       showToast('Sync iniciado — revisa GitHub Actions', 'ok');
 
       // Countdown 30 s
