@@ -517,10 +517,66 @@
 
     <!-- MONITOR VIEW -->
     <div id="view-monitor">
-      <div class="placeholder">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <p>Monitor de ejecuciones en tiempo real</p>
-        <p style="font-size:12px;">Próximamente — mostrará logs del workflow en vivo.</p>
+      <div style="max-width:760px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Fila superior: Estado + Próxima ejecución -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+          <!-- Estado del último run -->
+          <div class="card">
+            <h2>Estado del último run</h2>
+            <div id="mon-state-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+            <div id="mon-state-body" class="hidden">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                <div id="mon-state-dot" style="width:12px;height:12px;border-radius:50%;background:var(--muted);flex-shrink:0;"></div>
+                <div>
+                  <div id="mon-last-run-time" style="font-size:15px;font-weight:600;">—</div>
+                  <div id="mon-last-run-ago" style="font-size:12px;color:var(--muted);margin-top:2px;">—</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:24px;">
+                <div>
+                  <div class="section-label">Eventos sync</div>
+                  <div id="mon-events-count" style="font-size:22px;font-weight:700;">—</div>
+                </div>
+                <div>
+                  <div class="section-label">Fingerprints</div>
+                  <div id="mon-fp-count" style="font-size:22px;font-weight:700;">—</div>
+                </div>
+              </div>
+            </div>
+            <div id="mon-state-error" class="hidden" style="font-size:13px;color:var(--red);"></div>
+          </div>
+
+          <!-- Próxima ejecución -->
+          <div class="card">
+            <h2>Próxima ejecución</h2>
+            <div id="mon-next-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Calculando...</div>
+            <div id="mon-next-body" class="hidden">
+              <div id="mon-next-time" style="font-size:28px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums;">—</div>
+              <div id="mon-next-label" style="font-size:12px;color:var(--muted);margin-top:6px;">—</div>
+              <div id="mon-window-badge" style="margin-top:14px;"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Últimas reuniones sincronizadas -->
+        <div class="card">
+          <h2>Últimas 5 reuniones sincronizadas</h2>
+          <div id="mon-events-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="mon-events-empty" class="hidden" style="color:var(--muted);font-size:13px;padding:16px 0;">Aún no hay eventos sincronizados.</div>
+          <table id="mon-events-table" class="hidden">
+            <thead>
+              <tr>
+                <th>Outlook ID (abreviado)</th>
+                <th>Google Event</th>
+              </tr>
+            </thead>
+            <tbody id="mon-events-tbody"></tbody>
+          </table>
+        </div>
+
       </div>
     </div>
 
@@ -830,6 +886,8 @@ const App = (() => {
 
     if (view === 'health') renderHealth();
     if (view === 'configuracion') loadSyncConfig();
+    if (view === 'monitor') loadMonitor();
+    if (view !== 'monitor') { clearInterval(_countdownTimer); _countdownTimer = null; }
   }
 
   // ── Dashboard ────────────────────────────────────────────────
@@ -1017,6 +1075,174 @@ const App = (() => {
     }
   }
 
+  // ── Monitor ──────────────────────────────────────────────────
+  let _countdownTimer = null;
+
+  async function loadMonitor() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Reset UI
+    ['mon-state-loading','mon-events-loading','mon-next-loading'].forEach(id => {
+      document.getElementById(id).classList.remove('hidden');
+    });
+    ['mon-state-body','mon-state-error','mon-events-empty','mon-events-table','mon-next-body'].forEach(id => {
+      document.getElementById(id).classList.add('hidden');
+    });
+
+    // ── 1. Load state.json ──
+    try {
+      const resp = await ghFetch(`/repos/${owner}/${repo}/contents/data/state.json`);
+      const state = JSON.parse(atob(resp.content.replace(/\s/g, '')));
+
+      renderStateCard(state);
+      renderEventsTable(state.events_map || {});
+    } catch (e) {
+      document.getElementById('mon-state-loading').classList.add('hidden');
+      document.getElementById('mon-events-loading').classList.add('hidden');
+      const err = document.getElementById('mon-state-error');
+      err.classList.remove('hidden');
+      err.textContent = `Error cargando state.json: ${e.message}`;
+      document.getElementById('mon-events-empty').classList.remove('hidden');
+    }
+
+    // ── 2. Load cron frequency and start countdown ──
+    try {
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = decodeURIComponent(escape(atob(ymlResp.content.replace(/[^A-Za-z0-9+/=]/g, ''))));
+      const match = ymlText.match(/cron:\s*'?\*\/(\d+)/);
+      const freq = match ? parseInt(match[1]) : 20;
+
+      document.getElementById('mon-next-loading').classList.add('hidden');
+      document.getElementById('mon-next-body').classList.remove('hidden');
+
+      clearInterval(_countdownTimer);
+      _countdownTimer = setInterval(() => tickCountdown(freq), 1000);
+      tickCountdown(freq);
+    } catch (e) {
+      document.getElementById('mon-next-loading').classList.add('hidden');
+      document.getElementById('mon-next-body').classList.remove('hidden');
+      document.getElementById('mon-next-time').textContent = '—';
+      document.getElementById('mon-next-label').textContent = `Error: ${e.message}`;
+    }
+  }
+
+  function renderStateCard(state) {
+    document.getElementById('mon-state-loading').classList.add('hidden');
+    document.getElementById('mon-state-body').classList.remove('hidden');
+
+    const lastRun = state.last_run;
+    const dot = document.getElementById('mon-state-dot');
+    const timeEl = document.getElementById('mon-last-run-time');
+    const agoEl  = document.getElementById('mon-last-run-ago');
+
+    if (!lastRun) {
+      dot.style.background = 'var(--red)';
+      timeEl.textContent = 'Sin ejecuciones';
+      agoEl.textContent  = 'Nunca se ha ejecutado';
+    } else {
+      const d   = new Date(lastRun);
+      const now = new Date();
+      const diffMin = (now - d) / 60000;
+
+      // Format in Bogotá time
+      const bogotaStr = d.toLocaleString('es', {
+        timeZone: 'America/Bogota',
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+
+      timeEl.textContent = bogotaStr;
+      agoEl.textContent  = `hace ${Math.round(diffMin)} min`;
+
+      // Status color based on elapsed time
+      if (diffMin < 25)       { dot.style.background = 'var(--green)'; }
+      else if (diffMin < 120) { dot.style.background = '#D69E2E'; }
+      else                    { dot.style.background = 'var(--red)'; }
+    }
+
+    const eventsMap = state.events_map || {};
+    const fps       = state.event_fingerprints || {};
+    document.getElementById('mon-events-count').textContent = Object.keys(eventsMap).length;
+    document.getElementById('mon-fp-count').textContent     = Object.keys(fps).length;
+  }
+
+  function renderEventsTable(eventsMap) {
+    document.getElementById('mon-events-loading').classList.add('hidden');
+    const keys = Object.keys(eventsMap);
+
+    if (keys.length === 0) {
+      document.getElementById('mon-events-empty').classList.remove('hidden');
+      return;
+    }
+
+    // Take last 5 entries (keys are insertion-ordered)
+    const last5 = keys.slice(-5).reverse();
+    const tbody = document.getElementById('mon-events-tbody');
+
+    tbody.innerHTML = last5.map(outlookId => {
+      const googleId = eventsMap[outlookId];
+      // Abbreviate the outlook ID: show last 24 chars
+      const shortId = outlookId.length > 28
+        ? '...' + outlookId.slice(-24)
+        : outlookId;
+
+      // Build Google Calendar direct link
+      // Google event IDs in base64 need padding; encode as base64 for the eid param
+      let calLink = '#';
+      try {
+        // The googleId from the API is already the raw event ID
+        const b64 = btoa(googleId).replace(/=+$/, '');
+        calLink = `https://calendar.google.com/calendar/event?eid=${b64}`;
+      } catch (_) {}
+
+      return `<tr>
+        <td style="font-size:12px;font-family:monospace;color:var(--muted);" title="${outlookId}">${shortId}</td>
+        <td><a href="${calLink}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">
+          ${googleId.slice(0, 16)}… <svg style="vertical-align:middle" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('mon-events-table').classList.remove('hidden');
+  }
+
+  function tickCountdown(freqMin) {
+    const now = new Date();
+    // Bogotá offset: UTC-5
+    const bogotaOffset = -5 * 60;
+    const bogotaMs = now.getTime() + (now.getTimezoneOffset() + bogotaOffset) * 60000;
+    const bogota = new Date(bogotaMs);
+
+    const hStart = 7, hEnd = 17, mEnd = 30;
+    const totalMinBogota = bogota.getHours() * 60 + bogota.getMinutes();
+    const inWindow = totalMinBogota >= hStart * 60 && totalMinBogota < hEnd * 60 + mEnd;
+
+    const badge = document.getElementById('mon-window-badge');
+    if (!inWindow) {
+      document.getElementById('mon-next-time').textContent = '—';
+      document.getElementById('mon-next-label').textContent = 'Fuera de ventana horaria (07:00–17:30 Bogotá)';
+      badge.innerHTML = '<span class="badge badge-gray">Inactivo</span>';
+      return;
+    }
+
+    badge.innerHTML = '<span class="badge badge-green">Dentro de ventana</span>';
+
+    // Next cron tick: cron runs at */freqMin UTC, so find next UTC minute divisible by freq
+    const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const secsPastMin = now.getUTCSeconds();
+    const nextTick = (Math.floor(utcMin / freqMin) + 1) * freqMin; // next multiple
+    const minsUntil = nextTick - utcMin;
+    const secsUntil = minsUntil * 60 - secsPastMin;
+
+    const mm = String(Math.floor(secsUntil / 60)).padStart(2, '0');
+    const ss = String(secsUntil % 60).padStart(2, '0');
+
+    document.getElementById('mon-next-time').textContent = `${mm}:${ss}`;
+    document.getElementById('mon-next-label').textContent =
+      `Próximo sync en ${minsUntil} min · frecuencia ${freqMin} min`;
+  }
+
   // ── Init ─────────────────────────────────────────────────────
   function init() {
     // Nav click handlers
@@ -1038,7 +1264,7 @@ const App = (() => {
     });
   }
 
-  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig };
+  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor };
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
