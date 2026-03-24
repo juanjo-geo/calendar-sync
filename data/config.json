@@ -3,7 +3,13 @@
   "sync_window_days_past": 7,
   "sync_window_days_future": 60,
   "schedule": {
-    "allowed_days": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+    "allowed_days": [
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ],
     "allowed_hours_start": "07:00",
     "allowed_hours_end": "17:30"
   },
@@ -16,7 +22,9 @@
   "microsoft": {
     "tenant_id": "YOUR_TENANT_ID",
     "client_id": "YOUR_CLIENT_ID",
-    "scopes": ["Calendars.Read"]
+    "scopes": [
+      "Calendars.Read"
+    ]
   },
   "google": {
     "calendar_id": "jjgrillom98@gmail.com"
