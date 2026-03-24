@@ -582,10 +582,85 @@
 
     <!-- CONSUMO VIEW -->
     <div id="view-consumo">
-      <div class="placeholder">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
-        <p>Consumo de GitHub Actions</p>
-        <p style="font-size:12px;">Próximamente — minutos usados vs cuota mensual.</p>
+      <div style="max-width:760px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Minutos GitHub Actions -->
+        <div class="card">
+          <h2>Minutos GitHub Actions</h2>
+          <div id="con-billing-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-billing-body" class="hidden">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-bottom:20px;">
+              <div>
+                <div class="section-label">Usados este mes</div>
+                <div id="con-min-used" style="font-size:26px;font-weight:700;">—</div>
+                <div id="con-min-limit" style="font-size:12px;color:var(--muted);margin-top:3px;">de — min</div>
+              </div>
+              <div>
+                <div class="section-label">Porcentaje</div>
+                <div id="con-min-pct" style="font-size:26px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">del límite mensual</div>
+              </div>
+              <div>
+                <div class="section-label">Reset del mes</div>
+                <div id="con-reset-date" style="font-size:16px;font-weight:600;margin-top:4px;">—</div>
+                <div id="con-days-left" style="font-size:12px;color:var(--muted);margin-top:3px;">—</div>
+              </div>
+            </div>
+            <!-- Progress bar -->
+            <div style="background:var(--bg);border-radius:99px;height:10px;overflow:hidden;margin-bottom:10px;">
+              <div id="con-progress-bar" style="height:100%;border-radius:99px;width:0%;transition:width .5s,background .3s;background:var(--green);"></div>
+            </div>
+            <!-- Projection -->
+            <div id="con-projection" style="font-size:13px;color:var(--muted);"></div>
+          </div>
+          <div id="con-billing-error" class="hidden" style="font-size:13px;color:var(--red);"></div>
+        </div>
+
+        <!-- Resumen del mes -->
+        <div class="card">
+          <h2>Resumen del mes</h2>
+          <div id="con-summary-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-summary-body" class="hidden">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;">
+              <div>
+                <div class="section-label">Runs exitosos</div>
+                <div id="con-ok-runs" style="font-size:22px;font-weight:700;color:var(--green);">—</div>
+              </div>
+              <div>
+                <div class="section-label">Runs fallidos</div>
+                <div id="con-fail-runs" style="font-size:22px;font-weight:700;color:var(--red);">—</div>
+              </div>
+              <div>
+                <div class="section-label">Duración media</div>
+                <div id="con-avg-dur" style="font-size:22px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px;">segundos</div>
+              </div>
+              <div>
+                <div class="section-label">Run más largo</div>
+                <div id="con-max-dur" style="font-size:22px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px;">segundos</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+              <span class="section-label">Minutos por día (promedio)&nbsp;</span>
+              <span id="con-min-per-day" style="font-size:14px;font-weight:600;">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Últimos 10 runs del mes -->
+        <div class="card">
+          <h2>Últimos 10 runs del mes</h2>
+          <div id="con-runs-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-runs-empty" class="hidden" style="color:var(--muted);font-size:13px;padding:16px 0;">Sin runs este mes.</div>
+          <table id="con-runs-table" class="hidden">
+            <thead>
+              <tr><th>#</th><th>Estado</th><th>Fecha</th><th>Duración</th><th>Trigger</th><th></th></tr>
+            </thead>
+            <tbody id="con-runs-tbody"></tbody>
+          </table>
+        </div>
+
       </div>
     </div>
 
@@ -887,6 +962,7 @@ const App = (() => {
     if (view === 'health') renderHealth();
     if (view === 'configuracion') loadSyncConfig();
     if (view === 'monitor') loadMonitor();
+    if (view === 'consumo') loadConsumo();
     if (view !== 'monitor') { clearInterval(_countdownTimer); _countdownTimer = null; }
   }
 
@@ -1243,6 +1319,144 @@ const App = (() => {
       `Próximo sync en ${minsUntil} min · frecuencia ${freqMin} min`;
   }
 
+  // ── Consumo ──────────────────────────────────────────────────
+  async function loadConsumo() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Reset loaders
+    ['con-billing-loading','con-summary-loading','con-runs-loading'].forEach(id =>
+      document.getElementById(id).classList.remove('hidden')
+    );
+    ['con-billing-body','con-billing-error','con-summary-body',
+     'con-runs-table','con-runs-empty'].forEach(id =>
+      document.getElementById(id).classList.add('hidden')
+    );
+
+    // ── Billing minutes ──
+    try {
+      const billing = await ghFetch(`/repos/${owner}/${repo}/actions/billing/minutes`);
+      renderBilling(billing);
+    } catch (e) {
+      document.getElementById('con-billing-loading').classList.add('hidden');
+      const err = document.getElementById('con-billing-error');
+      err.classList.remove('hidden');
+      err.textContent = `Error al cargar billing: ${e.message}`;
+    }
+
+    // ── Runs del mes ──
+    try {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      // GitHub API filters by created date; fetch up to 100 and filter client-side
+      const data = await ghFetch(
+        `/repos/${owner}/${repo}/actions/runs?per_page=100&created=>=${monthStart}`
+      );
+      const runs = (data.workflow_runs || []).filter(r => {
+        const d = new Date(r.created_at);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      });
+      renderSummary(runs, now);
+      renderConsumoTable(runs);
+    } catch (e) {
+      document.getElementById('con-summary-loading').classList.add('hidden');
+      document.getElementById('con-runs-loading').classList.add('hidden');
+    }
+  }
+
+  function renderBilling(billing) {
+    document.getElementById('con-billing-loading').classList.add('hidden');
+    document.getElementById('con-billing-body').classList.remove('hidden');
+
+    const used  = billing.total_minutes_used ?? 0;
+    const limit = billing.included_minutes   ?? 2000;
+    const pct   = limit > 0 ? Math.round(used / limit * 100) : 0;
+
+    document.getElementById('con-min-used').textContent  = used.toLocaleString();
+    document.getElementById('con-min-limit').textContent = `de ${limit.toLocaleString()} min`;
+    document.getElementById('con-min-pct').textContent   = `${pct}%`;
+
+    // Progress bar color
+    const bar = document.getElementById('con-progress-bar');
+    bar.style.width = `${Math.min(pct, 100)}%`;
+    bar.style.background = pct < 60 ? 'var(--green)' : pct < 85 ? '#D69E2E' : 'var(--red)';
+
+    // Reset date
+    const now = new Date();
+    const reset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const daysLeft = Math.ceil((reset - now) / 864e5);
+    document.getElementById('con-reset-date').textContent =
+      reset.toLocaleDateString('es', { day: 'numeric', month: 'long' });
+    document.getElementById('con-days-left').textContent = `en ${daysLeft} días`;
+
+    // Projection
+    const dayOfMonth = now.getDate();
+    const projected  = dayOfMonth > 0 ? Math.round(used / dayOfMonth * 30) : 0;
+    const projPct    = limit > 0 ? Math.round(projected / limit * 100) : 0;
+    document.getElementById('con-projection').textContent =
+      `A este ritmo usarás ~${projected.toLocaleString()} min este mes (${projPct}% del límite)`;
+  }
+
+  function renderSummary(runs, now) {
+    document.getElementById('con-summary-loading').classList.add('hidden');
+    document.getElementById('con-summary-body').classList.remove('hidden');
+
+    const ok   = runs.filter(r => r.conclusion === 'success').length;
+    const fail = runs.filter(r => r.conclusion === 'failure').length;
+
+    const durations = runs
+      .filter(r => r.conclusion && r.updated_at && r.created_at)
+      .map(r => (new Date(r.updated_at) - new Date(r.created_at)) / 1000);
+
+    const avg = durations.length
+      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+      : 0;
+    const max = durations.length ? Math.round(Math.max(...durations)) : 0;
+
+    document.getElementById('con-ok-runs').textContent   = ok;
+    document.getElementById('con-fail-runs').textContent = fail;
+    document.getElementById('con-avg-dur').textContent   = avg;
+    document.getElementById('con-max-dur').textContent   = max;
+
+    // Minutes per day: total seconds / 60 / day-of-month
+    const totalSecs = durations.reduce((a, b) => a + b, 0);
+    const minPerDay = now.getDate() > 0
+      ? (totalSecs / 60 / now.getDate()).toFixed(1)
+      : '0';
+    document.getElementById('con-min-per-day').textContent = `${minPerDay} min/día`;
+  }
+
+  function renderConsumoTable(runs) {
+    document.getElementById('con-runs-loading').classList.add('hidden');
+    const month10 = runs.slice(0, 10);
+
+    if (!month10.length) {
+      document.getElementById('con-runs-empty').classList.remove('hidden');
+      return;
+    }
+
+    const tbody = document.getElementById('con-runs-tbody');
+    tbody.innerHTML = month10.map(r => {
+      const start  = new Date(r.created_at);
+      const secs   = Math.round((new Date(r.updated_at) - start) / 1000);
+      const dur    = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+      const dateStr = start.toLocaleString('es', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      const bCls   = r.conclusion === 'success' ? 'badge-green' : r.conclusion === 'failure' ? 'badge-red' : 'badge-gray';
+      const label  = r.conclusion || r.status;
+      const trigger = r.event === 'schedule' ? 'Cron' : r.event === 'workflow_dispatch' ? 'Manual' : r.event;
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px;">#${r.run_number}</td>
+        <td><span class="badge ${bCls}">${label}</span></td>
+        <td style="font-size:13px;">${dateStr}</td>
+        <td style="font-size:13px;color:var(--muted);">${r.status === 'in_progress' ? '<span class="spinner"></span>' : dur}</td>
+        <td style="font-size:12px;color:var(--muted);">${trigger}</td>
+        <td><a href="${r.html_url}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">Ver logs →</a></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('con-runs-table').classList.remove('hidden');
+  }
+
   // ── Init ─────────────────────────────────────────────────────
   function init() {
     // Nav click handlers
@@ -1264,7 +1478,7 @@ const App = (() => {
     });
   }
 
-  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor };
+  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor, loadConsumo };
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
