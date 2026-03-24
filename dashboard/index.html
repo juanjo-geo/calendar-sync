@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>calendar-sync · Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #1A56DB;
+      --blue-dk: #1447B4;
+      --blue-lt: #EBF2FF;
+      --bg:      #F7FAFC;
+      --surface: #FFFFFF;
+      --border:  #E2E8F0;
+      --text:    #2D3748;
+      --muted:   #718096;
+      --green:   #38A169;
+      --red:     #E53E3E;
+      --sidebar: 220px;
+      --header:  56px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: var(--sidebar);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 10;
+    }
+
+    #sidebar-brand {
+      height: var(--header);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--blue);
+      letter-spacing: -0.3px;
+    }
+
+    #sidebar-brand svg { flex-shrink: 0; }
+
+    #status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-left: auto;
+      transition: background .3s;
+      flex-shrink: 0;
+    }
+    #status-dot.ok  { background: var(--green); }
+    #status-dot.err { background: var(--red); }
+
+    nav { padding: 12px 0; flex: 1; }
+
+    nav a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: color .15s, background .15s, border-color .15s;
+      cursor: pointer;
+    }
+
+    nav a:hover { background: var(--bg); color: var(--text); }
+
+    nav a.active {
+      color: var(--blue);
+      background: var(--blue-lt);
+      border-left-color: var(--blue);
+    }
+
+    nav a svg { flex-shrink: 0; opacity: .7; }
+    nav a.active svg { opacity: 1; }
+
+    /* ── MAIN ── */
+    #main {
+      margin-left: var(--sidebar);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #header {
+      height: var(--header);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 28px;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    #header h1 { font-size: 15px; font-weight: 600; }
+    #header-breadcrumb { font-size: 13px; color: var(--muted); margin-left: 4px; }
+
+    #content {
+      padding: 28px;
+      flex: 1;
+    }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+    }
+
+    .card h2 { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 16px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--text); margin-top: 6px; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-green { background: #C6F6D5; color: #22543D; }
+    .badge-red   { background: #FED7D7; color: #742A2A; }
+    .badge-blue  { background: var(--blue-lt); color: var(--blue-dk); }
+    .badge-gray  { background: #EDF2F7; color: var(--muted); }
+
+    /* ── PLACEHOLDER VIEWS ── */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 80px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .placeholder svg { opacity: .3; }
+    .placeholder p { font-size: 14px; }
+
+    /* ── MODAL ── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+
+    #modal {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 36px 40px;
+      width: 420px;
+      max-width: 94vw;
+      box-shadow: 0 20px 60px rgba(0,0,0,.18);
+    }
+
+    #modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    #modal p.subtitle { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+
+    .form-group input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      transition: border-color .15s, box-shadow .15s;
+      outline: none;
+    }
+
+    .form-group input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(26,86,219,.15);
+    }
+
+    .form-group small { display: block; font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+    #modal-error {
+      background: #FFF5F5;
+      border: 1px solid #FC8181;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--red);
+      margin-bottom: 18px;
+      display: none;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: background .15s, opacity .15s;
+    }
+
+    .btn-primary { background: var(--blue); color: #fff; width: 100%; }
+    .btn-primary:hover { background: var(--blue-dk); }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── RUNS TABLE ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hidden { display: none !important; }
+
+    #view-dashboard, #view-configuracion, #view-monitor, #view-consumo, #view-health { display: none; }
+    #view-dashboard { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div id="sidebar-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+    calendar-sync
+    <span id="status-dot" title="Sin datos"></span>
+  </div>
+  <nav>
+    <a class="active" data-view="dashboard">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a data-view="configuracion">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Configuración
+    </a>
+    <a data-view="monitor">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Monitor
+    </a>
+    <a data-view="consumo">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+      Consumo
+    </a>
+    <a data-view="health">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Health
+    </a>
+  </nav>
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <header id="header">
+    <h1>calendar-sync</h1>
+    <span id="header-breadcrumb">/ Dashboard</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+      <span id="last-sync-label" style="font-size:12px;color:var(--muted);">Cargando...</span>
+      <button class="btn btn-primary" style="width:auto;padding:7px 16px;font-size:13px;" onclick="App.refresh()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Actualizar
+      </button>
+    </div>
+  </header>
+
+  <div id="content">
+
+    <!-- DASHBOARD VIEW -->
+    <div id="view-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Último sync</div>
+          <div class="stat-value" id="stat-last-run">—</div>
+          <div class="stat-sub" id="stat-last-run-sub">Sin datos aún</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Estado workflow</div>
+          <div class="stat-value" id="stat-status" style="font-size:16px;margin-top:10px;">—</div>
+          <div class="stat-sub" id="stat-status-sub">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Runs esta semana</div>
+          <div class="stat-value" id="stat-runs">—</div>
+          <div class="stat-sub">ejecuciones</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Tasa de éxito</div>
+          <div class="stat-value" id="stat-success">—</div>
+          <div class="stat-sub" id="stat-success-sub">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Últimas ejecuciones</h2>
+        <div id="runs-loading" style="text-align:center;padding:30px 0;color:var(--muted);font-size:14px;">
+          <span class="spinner"></span>&nbsp; Cargando runs...
+        </div>
+        <div id="runs-empty" class="hidden" style="text-align:center;padding:30px 0;color:var(--muted);font-size:14px;">Sin datos. Haz clic en Actualizar.</div>
+        <table id="runs-table" class="hidden">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Estado</th>
+              <th>Inicio</th>
+              <th>Duración</th>
+              <th>Trigger</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CONFIGURACIÓN VIEW -->
+    <div id="view-configuracion">
+      <div class="card" style="max-width:500px;">
+        <h2>Conexión GitHub</h2>
+        <div class="form-group">
+          <label>GitHub Token</label>
+          <input type="password" id="cfg-token" placeholder="ghp_..." />
+          <small>Necesario para leer runs y estado del workflow.</small>
+        </div>
+        <div class="form-group">
+          <label>Owner</label>
+          <input type="text" id="cfg-owner" value="juanjo-geo" />
+        </div>
+        <div class="form-group">
+          <label>Repositorio</label>
+          <input type="text" id="cfg-repo" value="calendar-sync" />
+        </div>
+        <div id="cfg-msg" style="font-size:13px;margin-bottom:14px;display:none;"></div>
+        <button class="btn btn-primary" style="width:auto;" onclick="App.saveConfig()">Guardar cambios</button>
+      </div>
+    </div>
+
+    <!-- MONITOR VIEW -->
+    <div id="view-monitor">
+      <div class="placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <p>Monitor de ejecuciones en tiempo real</p>
+        <p style="font-size:12px;">Próximamente — mostrará logs del workflow en vivo.</p>
+      </div>
+    </div>
+
+    <!-- CONSUMO VIEW -->
+    <div id="view-consumo">
+      <div class="placeholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        <p>Consumo de GitHub Actions</p>
+        <p style="font-size:12px;">Próximamente — minutos usados vs cuota mensual.</p>
+      </div>
+    </div>
+
+    <!-- HEALTH VIEW -->
+    <div id="view-health">
+      <div class="card" style="max-width:480px;">
+        <h2>Health Check</h2>
+        <div id="health-content" style="display:flex;flex-direction:column;gap:14px;">
+          <div id="health-loading" style="color:var(--muted);font-size:14px;"><span class="spinner"></span>&nbsp; Verificando...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- MODAL PRIMERA CONFIGURACIÓN -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>Primera configuración</h2>
+    <p class="subtitle">Conecta tu repositorio de GitHub para ver el estado del sync.</p>
+
+    <div class="form-group">
+      <label>GitHub Token <span style="color:var(--red)">*</span></label>
+      <input type="password" id="m-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" />
+      <small>Permisos mínimos: <code>repo</code> o <code>public_repo</code> + <code>workflow</code></small>
+    </div>
+    <div class="form-group">
+      <label>Owner del repositorio</label>
+      <input type="text" id="m-owner" value="juanjo-geo" />
+    </div>
+    <div class="form-group">
+      <label>Nombre del repositorio</label>
+      <input type="text" id="m-repo" value="calendar-sync" />
+    </div>
+
+    <div id="modal-error"></div>
+
+    <button class="btn btn-primary" id="modal-btn" onclick="App.setupSave()">
+      Guardar y continuar
+    </button>
+  </div>
+</div>
+
+<script>
+const App = (() => {
+
+  // ── Storage helpers ──────────────────────────────────────────
+  const KEY_TOKEN = 'cs_gh_token';
+  const KEY_OWNER = 'cs_gh_owner';
+  const KEY_REPO  = 'cs_gh_repo';
+
+  const get = k => localStorage.getItem(k) || '';
+  const set = (k, v) => localStorage.setItem(k, v);
+
+  // ── GitHub API ───────────────────────────────────────────────
+  async function ghFetch(path, token) {
+    const tk = token || get(KEY_TOKEN);
+    const res = await fetch(`https://api.github.com${path}`, {
+      headers: {
+        'Authorization': `Bearer ${tk}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      }
+    });
+    if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
+    return res.json();
+  }
+
+  // ── Modal ────────────────────────────────────────────────────
+  function showError(msg) {
+    const el = document.getElementById('modal-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function hideError() {
+    const el = document.getElementById('modal-error');
+    el.style.display = 'none';
+  }
+
+  async function setupSave() {
+    const token = document.getElementById('m-token').value.trim();
+    const owner = document.getElementById('m-owner').value.trim() || 'juanjo-geo';
+    const repo  = document.getElementById('m-repo').value.trim()  || 'calendar-sync';
+
+    if (!token) { showError('El token es requerido.'); return; }
+
+    hideError();
+    const btn = document.getElementById('modal-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;Validando...';
+
+    try {
+      await ghFetch('/user', token);
+      set(KEY_TOKEN, token);
+      set(KEY_OWNER, owner);
+      set(KEY_REPO,  repo);
+
+      document.getElementById('modal-overlay').classList.add('hidden');
+      syncConfigInputs();
+      refresh();
+    } catch (e) {
+      showError('Token inválido o sin permisos. Verifica y vuelve a intentar.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Guardar y continuar';
+    }
+  }
+
+  // ── Navigation ───────────────────────────────────────────────
+  let currentView = 'dashboard';
+
+  function navigate(view) {
+    document.querySelectorAll('[data-view]').forEach(a => {
+      a.classList.toggle('active', a.dataset.view === view);
+    });
+    document.querySelectorAll('[id^="view-"]').forEach(el => {
+      el.style.display = 'none';
+    });
+    const el = document.getElementById(`view-${view}`);
+    if (el) el.style.display = 'block';
+
+    const label = document.querySelector(`[data-view="${view}"]`)?.textContent?.trim() || view;
+    document.getElementById('header-breadcrumb').textContent = `/ ${label}`;
+    currentView = view;
+
+    if (view === 'health') renderHealth();
+  }
+
+  // ── Dashboard ────────────────────────────────────────────────
+  async function refresh() {
+    document.getElementById('last-sync-label').textContent = 'Actualizando...';
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    try {
+      const data = await ghFetch(`/repos/${owner}/${repo}/actions/runs?per_page=20`);
+      const runs = data.workflow_runs || [];
+
+      renderStats(runs);
+      renderTable(runs);
+
+      const dot = document.getElementById('status-dot');
+      const latest = runs[0];
+      if (!latest) {
+        dot.className = '';
+        dot.title = 'Sin runs';
+      } else if (latest.conclusion === 'success') {
+        dot.className = 'ok';
+        dot.title = 'Último sync exitoso';
+      } else if (latest.status === 'in_progress') {
+        dot.className = '';
+        dot.title = 'Ejecutando...';
+      } else {
+        dot.className = 'err';
+        dot.title = `Último sync: ${latest.conclusion}`;
+      }
+
+      document.getElementById('last-sync-label').textContent = `Actualizado ${new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
+    } catch (e) {
+      document.getElementById('last-sync-label').textContent = 'Error al cargar';
+      document.getElementById('stat-status').textContent = 'Error';
+    }
+  }
+
+  function renderStats(runs) {
+    const now = new Date();
+    const weekAgo = new Date(now - 7 * 864e5);
+    const week = runs.filter(r => new Date(r.created_at) >= weekAgo);
+    const success = week.filter(r => r.conclusion === 'success').length;
+
+    // last run time
+    const latest = runs[0];
+    if (latest) {
+      const d = new Date(latest.updated_at);
+      document.getElementById('stat-last-run').textContent = d.toLocaleDateString('es', { month: 'short', day: 'numeric' });
+      document.getElementById('stat-last-run-sub').textContent = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+      const status = latest.status === 'in_progress' ? 'En progreso' : (latest.conclusion || latest.status);
+      const colors = { success: '#38A169', failure: '#E53E3E', cancelled: '#718096' };
+      document.getElementById('stat-status').innerHTML =
+        `<span class="badge badge-${latest.conclusion === 'success' ? 'green' : latest.conclusion === 'failure' ? 'red' : 'gray'}">${status}</span>`;
+      document.getElementById('stat-status-sub').textContent = latest.name || 'Calendar Sync';
+    }
+
+    document.getElementById('stat-runs').textContent = week.length;
+    document.getElementById('stat-success').textContent = week.length ? `${Math.round(success / week.length * 100)}%` : '—';
+    document.getElementById('stat-success-sub').textContent = week.length ? `${success} / ${week.length} exitosos` : 'Sin datos esta semana';
+  }
+
+  function renderTable(runs) {
+    const loading = document.getElementById('runs-loading');
+    const empty   = document.getElementById('runs-empty');
+    const table   = document.getElementById('runs-table');
+    const tbody   = document.getElementById('runs-tbody');
+
+    loading.classList.add('hidden');
+
+    if (!runs.length) {
+      empty.classList.remove('hidden');
+      table.classList.add('hidden');
+      return;
+    }
+
+    empty.classList.add('hidden');
+    table.classList.remove('hidden');
+
+    tbody.innerHTML = runs.slice(0, 15).map(r => {
+      const start = new Date(r.created_at);
+      const end   = new Date(r.updated_at);
+      const secs  = Math.round((end - start) / 1000);
+      const dur   = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+      const startStr = start.toLocaleString('es', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+      const badgeCls = r.conclusion === 'success' ? 'badge-green' : r.conclusion === 'failure' ? 'badge-red' : r.status === 'in_progress' ? 'badge-blue' : 'badge-gray';
+      const label    = r.conclusion || r.status;
+      const trigger  = r.event === 'schedule' ? 'Cron' : r.event === 'workflow_dispatch' ? 'Manual' : r.event;
+
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px;">#${r.run_number}</td>
+        <td><span class="badge ${badgeCls}">${label}</span></td>
+        <td style="font-size:13px;">${startStr}</td>
+        <td style="font-size:13px;color:var(--muted);">${r.status === 'in_progress' ? '<span class="spinner"></span>' : dur}</td>
+        <td style="font-size:12px;color:var(--muted);">${trigger}</td>
+        <td><a href="${r.html_url}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">Ver logs →</a></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Health ───────────────────────────────────────────────────
+  async function renderHealth() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+    const el = document.getElementById('health-content');
+
+    el.innerHTML = '<div style="color:var(--muted);font-size:14px;"><span class="spinner"></span>&nbsp; Verificando...</div>';
+
+    const checks = [];
+
+    // GitHub API
+    try {
+      await ghFetch('/user');
+      checks.push({ label: 'GitHub API', ok: true, detail: 'Autenticado correctamente' });
+    } catch {
+      checks.push({ label: 'GitHub API', ok: false, detail: 'Token inválido o sin conexión' });
+    }
+
+    // Repo accesible
+    try {
+      const r = await ghFetch(`/repos/${owner}/${repo}`);
+      checks.push({ label: 'Repositorio', ok: true, detail: `${r.full_name} · ${r.visibility}` });
+    } catch {
+      checks.push({ label: 'Repositorio', ok: false, detail: `No se pudo acceder a ${owner}/${repo}` });
+    }
+
+    // Último run
+    try {
+      const data = await ghFetch(`/repos/${owner}/${repo}/actions/runs?per_page=1`);
+      const run = data.workflow_runs?.[0];
+      if (run) {
+        const ok = run.conclusion === 'success';
+        checks.push({ label: 'Último workflow', ok, detail: `#${run.run_number} · ${run.conclusion || run.status} · ${new Date(run.updated_at).toLocaleString('es')}` });
+      } else {
+        checks.push({ label: 'Último workflow', ok: null, detail: 'Sin ejecuciones registradas' });
+      }
+    } catch {
+      checks.push({ label: 'Último workflow', ok: false, detail: 'Error al consultar runs' });
+    }
+
+    el.innerHTML = checks.map(c => `
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;">
+        <div style="width:10px;height:10px;border-radius:50%;background:${c.ok === true ? 'var(--green)' : c.ok === false ? 'var(--red)' : 'var(--muted)'};flex-shrink:0;"></div>
+        <div>
+          <div style="font-size:13px;font-weight:600;">${c.label}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${c.detail}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Configuración ────────────────────────────────────────────
+  function syncConfigInputs() {
+    const t = document.getElementById('cfg-token');
+    const o = document.getElementById('cfg-owner');
+    const r = document.getElementById('cfg-repo');
+    if (t) t.value = get(KEY_TOKEN);
+    if (o) o.value = get(KEY_OWNER) || 'juanjo-geo';
+    if (r) r.value = get(KEY_REPO)  || 'calendar-sync';
+  }
+
+  async function saveConfig() {
+    const token = document.getElementById('cfg-token').value.trim();
+    const owner = document.getElementById('cfg-owner').value.trim() || 'juanjo-geo';
+    const repo  = document.getElementById('cfg-repo').value.trim()  || 'calendar-sync';
+    const msg   = document.getElementById('cfg-msg');
+
+    msg.style.display = 'none';
+
+    try {
+      if (token) await ghFetch('/user', token);
+      if (token) set(KEY_TOKEN, token);
+      set(KEY_OWNER, owner);
+      set(KEY_REPO,  repo);
+      msg.style.display = 'block';
+      msg.style.color = 'var(--green)';
+      msg.textContent = 'Configuración guardada correctamente.';
+      refresh();
+    } catch {
+      msg.style.display = 'block';
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Token inválido. Verifica y vuelve a intentar.';
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+  function init() {
+    // Nav click handlers
+    document.querySelectorAll('[data-view]').forEach(a => {
+      a.addEventListener('click', () => navigate(a.dataset.view));
+    });
+
+    // Check token
+    if (get(KEY_TOKEN)) {
+      document.getElementById('modal-overlay').classList.add('hidden');
+      syncConfigInputs();
+      refresh();
+    }
+    // else: modal stays visible
+
+    // Enter key en modal
+    document.getElementById('m-token').addEventListener('keydown', e => {
+      if (e.key === 'Enter') setupSave();
+    });
+  }
+
+  return { init, refresh, setupSave, saveConfig, navigate };
+})();
+
+document.addEventListener('DOMContentLoaded', App.init);
+</script>
+</body>
+</html>
