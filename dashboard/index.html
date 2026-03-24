@@ -280,6 +280,51 @@
 
     #view-dashboard, #view-configuracion, #view-monitor, #view-consumo, #view-health { display: none; }
     #view-dashboard { display: block; }
+
+    /* ── CONFIG VIEW ── */
+    .section-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+
+    .freq-group { display: flex; gap: 8px; }
+    .freq-btn {
+      padding: 8px 22px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+      background: var(--bg); color: var(--muted); transition: all .15s;
+    }
+    .freq-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .freq-btn.selected { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+    .days-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .day-btn {
+      padding: 7px 13px; border: 1.5px solid var(--border); border-radius: 7px;
+      font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+      background: var(--bg); color: var(--muted); transition: all .15s; user-select: none;
+    }
+    .day-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .day-btn.selected { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+    .num-input {
+      width: 72px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg);
+      outline: none; text-align: center;
+    }
+    .num-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+
+    .time-input {
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); outline: none;
+    }
+    .time-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed; bottom: 28px; right: 28px; padding: 12px 20px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; box-shadow: 0 8px 30px rgba(0,0,0,.15);
+      z-index: 200; transform: translateY(80px); opacity: 0;
+      transition: transform .25s, opacity .25s; pointer-events: none;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.toast-ok  { background: #C6F6D5; color: #22543D; border: 1px solid #9AE6B4; }
+    #toast.toast-err { background: #FED7D7; color: #742A2A; border: 1px solid #FC8181; }
   </style>
 </head>
 <body>
@@ -382,23 +427,91 @@
 
     <!-- CONFIGURACIÓN VIEW -->
     <div id="view-configuracion">
-      <div class="card" style="max-width:500px;">
-        <h2>Conexión GitHub</h2>
-        <div class="form-group">
-          <label>GitHub Token</label>
-          <input type="password" id="cfg-token" placeholder="ghp_..." />
-          <small>Necesario para leer runs y estado del workflow.</small>
+      <div style="max-width:700px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Frecuencia -->
+        <div class="card">
+          <h2>Frecuencia de sync</h2>
+          <div class="section-label">Intervalo de ejecución</div>
+          <div class="freq-group">
+            <button class="freq-btn" data-freq="10" onclick="App.selectFreq(this)">10 min</button>
+            <button class="freq-btn selected" data-freq="20" onclick="App.selectFreq(this)">20 min</button>
+            <button class="freq-btn" data-freq="30" onclick="App.selectFreq(this)">30 min</button>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:10px;">Actualiza el cron en <code>.github/workflows/sync.yml</code>. Efectivo en el próximo trigger de GitHub Actions.</p>
         </div>
-        <div class="form-group">
-          <label>Owner</label>
-          <input type="text" id="cfg-owner" value="juanjo-geo" />
+
+        <!-- Días + Horario -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card">
+            <h2>Días activos</h2>
+            <div class="days-group" id="days-group"></div>
+            <p id="days-error" style="font-size:12px;color:var(--red);margin-top:8px;display:none;">Selecciona al menos un día.</p>
+          </div>
+          <div class="card">
+            <h2>Ventana horaria</h2>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div>
+                <div class="section-label">Hora inicio</div>
+                <input type="time" class="time-input" id="cfg-hour-start" value="07:00" />
+              </div>
+              <div>
+                <div class="section-label">Hora fin</div>
+                <input type="time" class="time-input" id="cfg-hour-end" value="17:30" />
+              </div>
+              <p style="font-size:12px;color:var(--muted);">Zona horaria: America/Bogota (UTC-5)</p>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label>Repositorio</label>
-          <input type="text" id="cfg-repo" value="calendar-sync" />
+
+        <!-- Ventana temporal -->
+        <div class="card">
+          <h2>Ventana temporal</h2>
+          <div style="display:flex;gap:48px;align-items:flex-start;">
+            <div>
+              <div class="section-label">Días atrás</div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="number" class="num-input" id="cfg-days-past" min="1" max="30" value="7" />
+                <span style="font-size:13px;color:var(--muted);">días (1–30)</span>
+              </div>
+            </div>
+            <div>
+              <div class="section-label">Días adelante</div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="number" class="num-input" id="cfg-days-future" min="7" max="90" value="60" />
+                <span style="font-size:13px;color:var(--muted);">días (7–90)</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div id="cfg-msg" style="font-size:13px;margin-bottom:14px;display:none;"></div>
-        <button class="btn btn-primary" style="width:auto;" onclick="App.saveConfig()">Guardar cambios</button>
+
+        <!-- Conexión GitHub (token) -->
+        <div class="card">
+          <h2>Conexión GitHub</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label>GitHub Token</label>
+              <input type="password" id="cfg-token" placeholder="ghp_..." />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label>Owner</label>
+              <input type="text" id="cfg-owner" value="juanjo-geo" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label>Repositorio</label>
+              <input type="text" id="cfg-repo" value="calendar-sync" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Status + Guardar -->
+        <div id="cfg-load-status" style="font-size:13px;color:var(--muted);display:none;padding:2px 0;"></div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          <button class="btn btn-primary" style="width:auto;" id="cfg-save-btn" onclick="App.saveSyncConfig()">
+            Guardar configuración
+          </button>
+        </div>
+
       </div>
     </div>
 
@@ -432,6 +545,9 @@
 
   </div><!-- /content -->
 </div><!-- /main -->
+
+<!-- TOAST -->
+<div id="toast"></div>
 
 <!-- MODAL PRIMERA CONFIGURACIÓN -->
 <div id="modal-overlay">
@@ -484,6 +600,174 @@ const App = (() => {
     });
     if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
     return res.json();
+  }
+
+  async function ghPut(path, body) {
+    const res = await fetch(`https://api.github.com${path}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${get(KEY_TOKEN)}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  // ── Toast ────────────────────────────────────────────────────
+  let _toastTimer;
+  function showToast(msg, type = 'ok') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show toast-${type}`;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { el.classList.remove('show'); }, 3500);
+  }
+
+  // ── Sync Config ──────────────────────────────────────────────
+  let _selectedFreq = 20;
+
+  const DAYS_MAP = [
+    { key: 'Monday',    label: 'Lun' },
+    { key: 'Tuesday',   label: 'Mar' },
+    { key: 'Wednesday', label: 'Mié' },
+    { key: 'Thursday',  label: 'Jue' },
+    { key: 'Friday',    label: 'Vie' },
+    { key: 'Saturday',  label: 'Sáb' },
+    { key: 'Sunday',    label: 'Dom' },
+  ];
+
+  function selectFreq(btn) {
+    document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    _selectedFreq = parseInt(btn.dataset.freq);
+  }
+
+  function toggleDay(btn) {
+    btn.classList.toggle('selected');
+    const any = document.querySelectorAll('.day-btn.selected').length > 0;
+    document.getElementById('days-error').style.display = any ? 'none' : 'block';
+  }
+
+  function buildDaysButtons(activeDays) {
+    document.getElementById('days-group').innerHTML = DAYS_MAP.map(d =>
+      `<button class="day-btn ${activeDays.includes(d.key) ? 'selected' : ''}"
+               data-day="${d.key}"
+               onclick="App.toggleDay(this)">${d.label}</button>`
+    ).join('');
+  }
+
+  async function loadSyncConfig() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+    const status = document.getElementById('cfg-load-status');
+    status.style.display = 'block';
+    status.style.color = 'var(--muted)';
+    status.textContent = 'Cargando configuración desde GitHub...';
+
+    try {
+      // config.json
+      const cfgResp = await ghFetch(`/repos/${owner}/${repo}/contents/data/config.json`);
+      const cfg = JSON.parse(atob(cfgResp.content.replace(/\s/g, '')));
+
+      document.getElementById('cfg-days-past').value   = cfg.sync_window_days_past   ?? 7;
+      document.getElementById('cfg-days-future').value = cfg.sync_window_days_future ?? 60;
+      document.getElementById('cfg-hour-start').value  = cfg.schedule?.allowed_hours_start ?? '07:00';
+      document.getElementById('cfg-hour-end').value    = cfg.schedule?.allowed_hours_end   ?? '17:30';
+      buildDaysButtons(cfg.schedule?.allowed_days ?? ['Monday','Tuesday','Wednesday','Thursday','Friday']);
+
+      // sync.yml — parse current frequency
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = atob(ymlResp.content.replace(/\s/g, ''));
+      const cronMatch = ymlText.match(/cron:\s*'?\*\/(\d+)/);
+      if (cronMatch) {
+        _selectedFreq = parseInt(cronMatch[1]);
+        document.querySelectorAll('.freq-btn').forEach(b => {
+          b.classList.toggle('selected', parseInt(b.dataset.freq) === _selectedFreq);
+        });
+      }
+
+      status.style.display = 'none';
+    } catch (e) {
+      status.style.color = 'var(--red)';
+      status.textContent = `Error cargando configuración: ${e.message}`;
+    }
+  }
+
+  async function saveSyncConfig() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Validate days
+    const selectedDays = [...document.querySelectorAll('.day-btn.selected')].map(b => b.dataset.day);
+    if (selectedDays.length === 0) {
+      document.getElementById('days-error').style.display = 'block';
+      return;
+    }
+
+    // Validate hours
+    const hourStart = document.getElementById('cfg-hour-start').value;
+    const hourEnd   = document.getElementById('cfg-hour-end').value;
+    if (hourStart >= hourEnd) {
+      showToast('La hora de inicio debe ser anterior a la hora de fin.', 'err');
+      return;
+    }
+
+    const btn = document.getElementById('cfg-save-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;Guardando...';
+
+    try {
+      // ── 1. Update config.json ──
+      const cfgResp = await ghFetch(`/repos/${owner}/${repo}/contents/data/config.json`);
+      const cfg = JSON.parse(atob(cfgResp.content.replace(/\s/g, '')));
+
+      cfg.sync_window_days_past        = parseInt(document.getElementById('cfg-days-past').value)   || 7;
+      cfg.sync_window_days_future      = parseInt(document.getElementById('cfg-days-future').value) || 60;
+      cfg.schedule.allowed_days        = selectedDays;
+      cfg.schedule.allowed_hours_start = hourStart;
+      cfg.schedule.allowed_hours_end   = hourEnd;
+
+      // Save GitHub token/owner/repo changes too if filled
+      const newToken = document.getElementById('cfg-token').value.trim();
+      const newOwner = document.getElementById('cfg-owner').value.trim();
+      const newRepo  = document.getElementById('cfg-repo').value.trim();
+      if (newToken) set(KEY_TOKEN, newToken);
+      if (newOwner) set(KEY_OWNER, newOwner);
+      if (newRepo)  set(KEY_REPO,  newRepo);
+
+      await ghPut(`/repos/${owner}/${repo}/contents/data/config.json`, {
+        message: 'config: update sync settings from dashboard',
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(cfg, null, 2)))),
+        sha: cfgResp.sha,
+      });
+
+      // ── 2. Update sync.yml cron ──
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = atob(ymlResp.content.replace(/\s/g, ''));
+      // Decode preserving actual newlines (GitHub content uses \n escaped in base64)
+      const ymlDecoded = decodeURIComponent(escape(atob(ymlResp.content.replace(/[^A-Za-z0-9+/=]/g, ''))));
+      const newYml = ymlDecoded.replace(/(- cron:\s*['"]?\*\/)\d+/, `$1${_selectedFreq}`);
+
+      await ghPut(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`, {
+        message: `config: set sync frequency to ${_selectedFreq}min from dashboard`,
+        content: btoa(unescape(encodeURIComponent(newYml))),
+        sha: ymlResp.sha,
+      });
+
+      showToast('Configuración guardada correctamente', 'ok');
+    } catch (e) {
+      showToast(`Error al guardar: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Guardar configuración';
+    }
   }
 
   // ── Modal ────────────────────────────────────────────────────
@@ -545,6 +829,7 @@ const App = (() => {
     currentView = view;
 
     if (view === 'health') renderHealth();
+    if (view === 'configuracion') loadSyncConfig();
   }
 
   // ── Dashboard ────────────────────────────────────────────────
@@ -753,7 +1038,7 @@ const App = (() => {
     });
   }
 
-  return { init, refresh, setupSave, saveConfig, navigate };
+  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig };
 })();
 
 document.addEventListener('DOMContentLoaded', App.init);
