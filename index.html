@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>calendar-sync · Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #1A56DB;
+      --blue-dk: #1447B4;
+      --blue-lt: #EBF2FF;
+      --bg:      #F7FAFC;
+      --surface: #FFFFFF;
+      --border:  #E2E8F0;
+      --text:    #2D3748;
+      --muted:   #718096;
+      --green:   #38A169;
+      --red:     #E53E3E;
+      --sidebar: 220px;
+      --header:  56px;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      width: var(--sidebar);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 10;
+    }
+
+    #sidebar-brand {
+      height: var(--header);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--blue);
+      letter-spacing: -0.3px;
+    }
+
+    #sidebar-brand svg { flex-shrink: 0; }
+
+    #status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-left: auto;
+      transition: background .3s;
+      flex-shrink: 0;
+    }
+    #status-dot.ok  { background: var(--green); }
+    #status-dot.err { background: var(--red); }
+
+    nav { padding: 12px 0; flex: 1; }
+
+    nav a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      border-left: 3px solid transparent;
+      transition: color .15s, background .15s, border-color .15s;
+      cursor: pointer;
+    }
+
+    nav a:hover { background: var(--bg); color: var(--text); }
+
+    nav a.active {
+      color: var(--blue);
+      background: var(--blue-lt);
+      border-left-color: var(--blue);
+    }
+
+    nav a svg { flex-shrink: 0; opacity: .7; }
+    nav a.active svg { opacity: 1; }
+
+    /* ── MAIN ── */
+    #main {
+      margin-left: var(--sidebar);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #header {
+      height: var(--header);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 28px;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    #header h1 { font-size: 15px; font-weight: 600; }
+    #header-breadcrumb { font-size: 13px; color: var(--muted); margin-left: 4px; }
+
+    #content {
+      padding: 28px;
+      flex: 1;
+    }
+
+    /* ── CARDS ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+    }
+
+    .card h2 { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 16px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+    }
+
+    .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: var(--text); margin-top: 6px; }
+    .stat-sub   { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-green { background: #C6F6D5; color: #22543D; }
+    .badge-red   { background: #FED7D7; color: #742A2A; }
+    .badge-blue  { background: var(--blue-lt); color: var(--blue-dk); }
+    .badge-gray  { background: #EDF2F7; color: var(--muted); }
+
+    /* ── PLACEHOLDER VIEWS ── */
+    .placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 80px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .placeholder svg { opacity: .3; }
+    .placeholder p { font-size: 14px; }
+
+    /* ── MODAL ── */
+    #modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.45);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+
+    #modal {
+      background: var(--surface);
+      border-radius: 14px;
+      padding: 36px 40px;
+      width: 420px;
+      max-width: 94vw;
+      box-shadow: 0 20px 60px rgba(0,0,0,.18);
+    }
+
+    #modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    #modal p.subtitle { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+
+    .form-group input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--bg);
+      transition: border-color .15s, box-shadow .15s;
+      outline: none;
+    }
+
+    .form-group input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(26,86,219,.15);
+    }
+
+    .form-group small { display: block; font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+    #modal-error {
+      background: #FFF5F5;
+      border: 1px solid #FC8181;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--red);
+      margin-bottom: 18px;
+      display: none;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      transition: background .15s, opacity .15s;
+    }
+
+    .btn-primary { background: var(--blue); color: #fff; width: 100%; }
+    .btn-primary:hover { background: var(--blue-dk); }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+
+    /* ── RUNS TABLE ── */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hidden { display: none !important; }
+
+    #view-dashboard, #view-configuracion, #view-monitor, #view-consumo, #view-health { display: none; }
+    #view-dashboard { display: block; }
+
+    /* ── CONFIG VIEW ── */
+    .section-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+
+    .freq-group { display: flex; gap: 8px; }
+    .freq-btn {
+      padding: 8px 22px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+      background: var(--bg); color: var(--muted); transition: all .15s;
+    }
+    .freq-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .freq-btn.selected { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+    .days-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .day-btn {
+      padding: 7px 13px; border: 1.5px solid var(--border); border-radius: 7px;
+      font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+      background: var(--bg); color: var(--muted); transition: all .15s; user-select: none;
+    }
+    .day-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .day-btn.selected { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+    .num-input {
+      width: 72px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg);
+      outline: none; text-align: center;
+    }
+    .num-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+
+    .time-input {
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); outline: none;
+    }
+    .time-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(26,86,219,.15); }
+
+    /* ── TOAST ── */
+    #toast {
+      position: fixed; bottom: 28px; right: 28px; padding: 12px 20px; border-radius: 10px;
+      font-size: 14px; font-weight: 500; box-shadow: 0 8px 30px rgba(0,0,0,.15);
+      z-index: 200; transform: translateY(80px); opacity: 0;
+      transition: transform .25s, opacity .25s; pointer-events: none;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.toast-ok  { background: #C6F6D5; color: #22543D; border: 1px solid #9AE6B4; }
+    #toast.toast-err { background: #FED7D7; color: #742A2A; border: 1px solid #FC8181; }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div id="sidebar-brand">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1A56DB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+    calendar-sync
+    <span id="status-dot" title="Sin datos"></span>
+  </div>
+  <nav>
+    <a class="active" data-view="dashboard">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </a>
+    <a data-view="configuracion">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      Configuración
+    </a>
+    <a data-view="monitor">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Monitor
+    </a>
+    <a data-view="consumo">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+      Consumo
+    </a>
+    <a data-view="health">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      Health
+    </a>
+  </nav>
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <header id="header">
+    <h1>calendar-sync</h1>
+    <span id="header-breadcrumb">/ Dashboard</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+      <span id="last-sync-label" style="font-size:12px;color:var(--muted);">Cargando...</span>
+      <button class="btn btn-primary" style="width:auto;padding:7px 16px;font-size:13px;" onclick="App.refresh()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Actualizar
+      </button>
+    </div>
+  </header>
+
+  <div id="content">
+
+    <!-- DASHBOARD VIEW -->
+    <div id="view-dashboard">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Último sync</div>
+          <div class="stat-value" id="stat-last-run">—</div>
+          <div class="stat-sub" id="stat-last-run-sub">Sin datos aún</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Estado workflow</div>
+          <div class="stat-value" id="stat-status" style="font-size:16px;margin-top:10px;">—</div>
+          <div class="stat-sub" id="stat-status-sub">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Runs esta semana</div>
+          <div class="stat-value" id="stat-runs">—</div>
+          <div class="stat-sub">ejecuciones</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Tasa de éxito</div>
+          <div class="stat-value" id="stat-success">—</div>
+          <div class="stat-sub" id="stat-success-sub">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Últimas ejecuciones</h2>
+        <div id="runs-loading" style="text-align:center;padding:30px 0;color:var(--muted);font-size:14px;">
+          <span class="spinner"></span>&nbsp; Cargando runs...
+        </div>
+        <div id="runs-empty" class="hidden" style="text-align:center;padding:30px 0;color:var(--muted);font-size:14px;">Sin datos. Haz clic en Actualizar.</div>
+        <table id="runs-table" class="hidden">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Estado</th>
+              <th>Inicio</th>
+              <th>Duración</th>
+              <th>Trigger</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="runs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CONFIGURACIÓN VIEW -->
+    <div id="view-configuracion">
+      <div style="max-width:700px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Frecuencia -->
+        <div class="card">
+          <h2>Frecuencia de sync</h2>
+          <div class="section-label">Intervalo de ejecución</div>
+          <div class="freq-group">
+            <button class="freq-btn" data-freq="10" onclick="App.selectFreq(this)">10 min</button>
+            <button class="freq-btn selected" data-freq="20" onclick="App.selectFreq(this)">20 min</button>
+            <button class="freq-btn" data-freq="30" onclick="App.selectFreq(this)">30 min</button>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:10px;">Actualiza el cron en <code>.github/workflows/sync.yml</code>. Efectivo en el próximo trigger de GitHub Actions.</p>
+        </div>
+
+        <!-- Días + Horario -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div class="card">
+            <h2>Días activos</h2>
+            <div class="days-group" id="days-group"></div>
+            <p id="days-error" style="font-size:12px;color:var(--red);margin-top:8px;display:none;">Selecciona al menos un día.</p>
+          </div>
+          <div class="card">
+            <h2>Ventana horaria</h2>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div>
+                <div class="section-label">Hora inicio</div>
+                <input type="time" class="time-input" id="cfg-hour-start" value="07:00" />
+              </div>
+              <div>
+                <div class="section-label">Hora fin</div>
+                <input type="time" class="time-input" id="cfg-hour-end" value="17:30" />
+              </div>
+              <p style="font-size:12px;color:var(--muted);">Zona horaria: America/Bogota (UTC-5)</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ventana temporal -->
+        <div class="card">
+          <h2>Ventana temporal</h2>
+          <div style="display:flex;gap:48px;align-items:flex-start;">
+            <div>
+              <div class="section-label">Días atrás</div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="number" class="num-input" id="cfg-days-past" min="1" max="30" value="7" />
+                <span style="font-size:13px;color:var(--muted);">días (1–30)</span>
+              </div>
+            </div>
+            <div>
+              <div class="section-label">Días adelante</div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <input type="number" class="num-input" id="cfg-days-future" min="7" max="90" value="60" />
+                <span style="font-size:13px;color:var(--muted);">días (7–90)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Conexión GitHub (token) -->
+        <div class="card">
+          <h2>Conexión GitHub</h2>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="form-group" style="margin-bottom:0;">
+              <label>GitHub Token</label>
+              <input type="password" id="cfg-token" placeholder="ghp_..." />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label>Owner</label>
+              <input type="text" id="cfg-owner" value="juanjo-geo" />
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label>Repositorio</label>
+              <input type="text" id="cfg-repo" value="calendar-sync" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Status + Guardar -->
+        <div id="cfg-load-status" style="font-size:13px;color:var(--muted);display:none;padding:2px 0;"></div>
+        <div style="display:flex;align-items:center;gap:16px;">
+          <button class="btn btn-primary" style="width:auto;" id="cfg-save-btn" onclick="App.saveSyncConfig()">
+            Guardar configuración
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- MONITOR VIEW -->
+    <div id="view-monitor">
+      <div style="max-width:760px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Fila superior: Estado + Próxima ejecución -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+          <!-- Estado del último run -->
+          <div class="card">
+            <h2>Estado del último run</h2>
+            <div id="mon-state-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+            <div id="mon-state-body" class="hidden">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+                <div id="mon-state-dot" style="width:12px;height:12px;border-radius:50%;background:var(--muted);flex-shrink:0;"></div>
+                <div>
+                  <div id="mon-last-run-time" style="font-size:15px;font-weight:600;">—</div>
+                  <div id="mon-last-run-ago" style="font-size:12px;color:var(--muted);margin-top:2px;">—</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:24px;">
+                <div>
+                  <div class="section-label">Eventos sync</div>
+                  <div id="mon-events-count" style="font-size:22px;font-weight:700;">—</div>
+                </div>
+                <div>
+                  <div class="section-label">Fingerprints</div>
+                  <div id="mon-fp-count" style="font-size:22px;font-weight:700;">—</div>
+                </div>
+              </div>
+            </div>
+            <div id="mon-state-error" class="hidden" style="font-size:13px;color:var(--red);"></div>
+          </div>
+
+          <!-- Próxima ejecución -->
+          <div class="card">
+            <h2>Próxima ejecución</h2>
+            <div id="mon-next-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Calculando...</div>
+            <div id="mon-next-body" class="hidden">
+              <div id="mon-next-time" style="font-size:28px;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums;">—</div>
+              <div id="mon-next-label" style="font-size:12px;color:var(--muted);margin-top:6px;">—</div>
+              <div id="mon-window-badge" style="margin-top:14px;"></div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Últimas reuniones sincronizadas -->
+        <div class="card">
+          <h2>Últimas 5 reuniones sincronizadas</h2>
+          <div id="mon-events-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="mon-events-empty" class="hidden" style="color:var(--muted);font-size:13px;padding:16px 0;">Aún no hay eventos sincronizados.</div>
+          <table id="mon-events-table" class="hidden">
+            <thead>
+              <tr>
+                <th>Outlook ID (abreviado)</th>
+                <th>Google Event</th>
+              </tr>
+            </thead>
+            <tbody id="mon-events-tbody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- CONSUMO VIEW -->
+    <div id="view-consumo">
+      <div style="max-width:760px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Minutos GitHub Actions -->
+        <div class="card">
+          <h2>Minutos GitHub Actions</h2>
+          <div id="con-billing-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-billing-body" class="hidden">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-bottom:20px;">
+              <div>
+                <div class="section-label">Usados este mes</div>
+                <div id="con-min-used" style="font-size:26px;font-weight:700;">—</div>
+                <div id="con-min-limit" style="font-size:12px;color:var(--muted);margin-top:3px;">de — min</div>
+              </div>
+              <div>
+                <div class="section-label">Porcentaje</div>
+                <div id="con-min-pct" style="font-size:26px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">del límite mensual</div>
+              </div>
+              <div>
+                <div class="section-label">Reset del mes</div>
+                <div id="con-reset-date" style="font-size:16px;font-weight:600;margin-top:4px;">—</div>
+                <div id="con-days-left" style="font-size:12px;color:var(--muted);margin-top:3px;">—</div>
+              </div>
+            </div>
+            <!-- Progress bar -->
+            <div style="background:var(--bg);border-radius:99px;height:10px;overflow:hidden;margin-bottom:10px;">
+              <div id="con-progress-bar" style="height:100%;border-radius:99px;width:0%;transition:width .5s,background .3s;background:var(--green);"></div>
+            </div>
+            <!-- Projection -->
+            <div id="con-projection" style="font-size:13px;color:var(--muted);"></div>
+          </div>
+          <div id="con-billing-error" class="hidden" style="font-size:13px;color:var(--red);"></div>
+        </div>
+
+        <!-- Resumen del mes -->
+        <div class="card">
+          <h2>Resumen del mes</h2>
+          <div id="con-summary-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-summary-body" class="hidden">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;">
+              <div>
+                <div class="section-label">Runs exitosos</div>
+                <div id="con-ok-runs" style="font-size:22px;font-weight:700;color:var(--green);">—</div>
+              </div>
+              <div>
+                <div class="section-label">Runs fallidos</div>
+                <div id="con-fail-runs" style="font-size:22px;font-weight:700;color:var(--red);">—</div>
+              </div>
+              <div>
+                <div class="section-label">Duración media</div>
+                <div id="con-avg-dur" style="font-size:22px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px;">segundos</div>
+              </div>
+              <div>
+                <div class="section-label">Run más largo</div>
+                <div id="con-max-dur" style="font-size:22px;font-weight:700;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px;">segundos</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+              <span class="section-label">Minutos por día (promedio)&nbsp;</span>
+              <span id="con-min-per-day" style="font-size:14px;font-weight:600;">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Últimos 10 runs del mes -->
+        <div class="card">
+          <h2>Últimos 10 runs del mes</h2>
+          <div id="con-runs-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="con-runs-empty" class="hidden" style="color:var(--muted);font-size:13px;padding:16px 0;">Sin runs este mes.</div>
+          <table id="con-runs-table" class="hidden">
+            <thead>
+              <tr><th>#</th><th>Estado</th><th>Fecha</th><th>Duración</th><th>Trigger</th><th></th></tr>
+            </thead>
+            <tbody id="con-runs-tbody"></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- HEALTH VIEW -->
+    <div id="view-health">
+      <div style="max-width:680px;display:flex;flex-direction:column;gap:20px;">
+
+        <!-- Sync Now -->
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
+          <div>
+            <div style="font-size:15px;font-weight:600;">Sincronización manual</div>
+            <div style="font-size:13px;color:var(--muted);margin-top:3px;">Dispara el workflow ahora, sin esperar al cron.</div>
+          </div>
+          <button id="sync-now-btn" class="btn btn-primary" style="width:auto;white-space:nowrap;" onclick="App.syncNow()">
+            ⚡ Sincronizar Ahora
+          </button>
+        </div>
+
+        <!-- Credenciales -->
+        <div class="card">
+          <h2>Credenciales (Secrets)</h2>
+          <div id="hlt-secrets-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Verificando...</div>
+          <div id="hlt-secrets-body" class="hidden" style="display:flex;flex-direction:column;gap:10px;"></div>
+        </div>
+
+        <!-- Workflow -->
+        <div class="card">
+          <h2>Estado del Workflow</h2>
+          <div id="hlt-wf-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Verificando...</div>
+          <div id="hlt-wf-body" class="hidden">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <div id="hlt-wf-badge"></div>
+              <div>
+                <div id="hlt-wf-name" style="font-size:13px;font-weight:600;">—</div>
+                <div id="hlt-wf-updated" style="font-size:12px;color:var(--muted);margin-top:2px;">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Último commit -->
+        <div class="card">
+          <h2>Último Commit</h2>
+          <div id="hlt-commit-loading" style="color:var(--muted);font-size:13px;"><span class="spinner"></span>&nbsp;Cargando...</div>
+          <div id="hlt-commit-body" class="hidden">
+            <div style="display:flex;align-items:flex-start;gap:12px;">
+              <img id="hlt-commit-avatar" src="" width="32" height="32" style="border-radius:50%;flex-shrink:0;" />
+              <div style="min-width:0;">
+                <div id="hlt-commit-msg" style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">—</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">
+                  <span id="hlt-commit-author">—</span>
+                  &nbsp;·&nbsp;
+                  <span id="hlt-commit-ago">—</span>
+                  &nbsp;·&nbsp;
+                  <a id="hlt-commit-link" href="#" target="_blank" style="color:var(--blue);text-decoration:none;">ver commit →</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- MODAL PRIMERA CONFIGURACIÓN -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2>Primera configuración</h2>
+    <p class="subtitle">Conecta tu repositorio de GitHub para ver el estado del sync.</p>
+
+    <div class="form-group">
+      <label>GitHub Token <span style="color:var(--red)">*</span></label>
+      <input type="password" id="m-token" placeholder="ghp_xxxxxxxxxxxx" autocomplete="off" />
+      <small>Permisos mínimos: <code>repo</code> o <code>public_repo</code> + <code>workflow</code></small>
+    </div>
+    <div class="form-group">
+      <label>Owner del repositorio</label>
+      <input type="text" id="m-owner" value="juanjo-geo" />
+    </div>
+    <div class="form-group">
+      <label>Nombre del repositorio</label>
+      <input type="text" id="m-repo" value="calendar-sync" />
+    </div>
+
+    <div id="modal-error"></div>
+
+    <button class="btn btn-primary" id="modal-btn" onclick="App.setupSave()">
+      Guardar y continuar
+    </button>
+  </div>
+</div>
+
+<script>
+const App = (() => {
+
+  // ── Storage helpers ──────────────────────────────────────────
+  const KEY_TOKEN = 'cs_gh_token';
+  const KEY_OWNER = 'cs_gh_owner';
+  const KEY_REPO  = 'cs_gh_repo';
+
+  const get = k => localStorage.getItem(k) || '';
+  const set = (k, v) => localStorage.setItem(k, v);
+
+  // ── GitHub API ───────────────────────────────────────────────
+  async function ghFetch(path, token) {
+    const tk = token || get(KEY_TOKEN);
+    const res = await fetch(`https://api.github.com${path}`, {
+      headers: {
+        'Authorization': `Bearer ${tk}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      }
+    });
+    if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
+    return res.json();
+  }
+
+  async function ghPut(path, body) {
+    const res = await fetch(`https://api.github.com${path}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${get(KEY_TOKEN)}`,
+        'Accept': 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `${res.status} ${res.statusText}`);
+    }
+    return res.json();
+  }
+
+  // ── Toast ────────────────────────────────────────────────────
+  let _toastTimer;
+  function showToast(msg, type = 'ok') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show toast-${type}`;
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => { el.classList.remove('show'); }, 3500);
+  }
+
+  // ── Sync Config ──────────────────────────────────────────────
+  let _selectedFreq = 20;
+
+  const DAYS_MAP = [
+    { key: 'Monday',    label: 'Lun' },
+    { key: 'Tuesday',   label: 'Mar' },
+    { key: 'Wednesday', label: 'Mié' },
+    { key: 'Thursday',  label: 'Jue' },
+    { key: 'Friday',    label: 'Vie' },
+    { key: 'Saturday',  label: 'Sáb' },
+    { key: 'Sunday',    label: 'Dom' },
+  ];
+
+  function selectFreq(btn) {
+    document.querySelectorAll('.freq-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    _selectedFreq = parseInt(btn.dataset.freq);
+  }
+
+  function toggleDay(btn) {
+    btn.classList.toggle('selected');
+    const any = document.querySelectorAll('.day-btn.selected').length > 0;
+    document.getElementById('days-error').style.display = any ? 'none' : 'block';
+  }
+
+  function buildDaysButtons(activeDays) {
+    document.getElementById('days-group').innerHTML = DAYS_MAP.map(d =>
+      `<button class="day-btn ${activeDays.includes(d.key) ? 'selected' : ''}"
+               data-day="${d.key}"
+               onclick="App.toggleDay(this)">${d.label}</button>`
+    ).join('');
+  }
+
+  async function loadSyncConfig() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+    const status = document.getElementById('cfg-load-status');
+    status.style.display = 'block';
+    status.style.color = 'var(--muted)';
+    status.textContent = 'Cargando configuración desde GitHub...';
+
+    try {
+      // config.json
+      const cfgResp = await ghFetch(`/repos/${owner}/${repo}/contents/data/config.json`);
+      const cfg = JSON.parse(atob(cfgResp.content.replace(/\s/g, '')));
+
+      document.getElementById('cfg-days-past').value   = cfg.sync_window_days_past   ?? 7;
+      document.getElementById('cfg-days-future').value = cfg.sync_window_days_future ?? 60;
+      document.getElementById('cfg-hour-start').value  = cfg.schedule?.allowed_hours_start ?? '07:00';
+      document.getElementById('cfg-hour-end').value    = cfg.schedule?.allowed_hours_end   ?? '17:30';
+      buildDaysButtons(cfg.schedule?.allowed_days ?? ['Monday','Tuesday','Wednesday','Thursday','Friday']);
+
+      // sync.yml — parse current frequency
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = atob(ymlResp.content.replace(/\s/g, ''));
+      const cronMatch = ymlText.match(/cron:\s*'?\*\/(\d+)/);
+      if (cronMatch) {
+        _selectedFreq = parseInt(cronMatch[1]);
+        document.querySelectorAll('.freq-btn').forEach(b => {
+          b.classList.toggle('selected', parseInt(b.dataset.freq) === _selectedFreq);
+        });
+      }
+
+      status.style.display = 'none';
+    } catch (e) {
+      status.style.color = 'var(--red)';
+      status.textContent = `Error cargando configuración: ${e.message}`;
+    }
+  }
+
+  async function saveSyncConfig() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Validate days
+    const selectedDays = [...document.querySelectorAll('.day-btn.selected')].map(b => b.dataset.day);
+    if (selectedDays.length === 0) {
+      document.getElementById('days-error').style.display = 'block';
+      return;
+    }
+
+    // Validate hours
+    const hourStart = document.getElementById('cfg-hour-start').value;
+    const hourEnd   = document.getElementById('cfg-hour-end').value;
+    if (hourStart >= hourEnd) {
+      showToast('La hora de inicio debe ser anterior a la hora de fin.', 'err');
+      return;
+    }
+
+    const btn = document.getElementById('cfg-save-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;Guardando...';
+
+    try {
+      // ── 1. Update config.json ──
+      const cfgResp = await ghFetch(`/repos/${owner}/${repo}/contents/data/config.json`);
+      const cfg = JSON.parse(atob(cfgResp.content.replace(/\s/g, '')));
+
+      cfg.sync_window_days_past        = parseInt(document.getElementById('cfg-days-past').value)   || 7;
+      cfg.sync_window_days_future      = parseInt(document.getElementById('cfg-days-future').value) || 60;
+      cfg.schedule.allowed_days        = selectedDays;
+      cfg.schedule.allowed_hours_start = hourStart;
+      cfg.schedule.allowed_hours_end   = hourEnd;
+
+      // Save GitHub token/owner/repo changes too if filled
+      const newToken = document.getElementById('cfg-token').value.trim();
+      const newOwner = document.getElementById('cfg-owner').value.trim();
+      const newRepo  = document.getElementById('cfg-repo').value.trim();
+      if (newToken) set(KEY_TOKEN, newToken);
+      if (newOwner) set(KEY_OWNER, newOwner);
+      if (newRepo)  set(KEY_REPO,  newRepo);
+
+      await ghPut(`/repos/${owner}/${repo}/contents/data/config.json`, {
+        message: 'config: update sync settings from dashboard',
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(cfg, null, 2)))),
+        sha: cfgResp.sha,
+      });
+
+      // ── 2. Update sync.yml cron ──
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = atob(ymlResp.content.replace(/\s/g, ''));
+      // Decode preserving actual newlines (GitHub content uses \n escaped in base64)
+      const ymlDecoded = decodeURIComponent(escape(atob(ymlResp.content.replace(/[^A-Za-z0-9+/=]/g, ''))));
+      const newYml = ymlDecoded.replace(/(- cron:\s*['"]?\*\/)\d+/, `$1${_selectedFreq}`);
+
+      await ghPut(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`, {
+        message: `config: set sync frequency to ${_selectedFreq}min from dashboard`,
+        content: btoa(unescape(encodeURIComponent(newYml))),
+        sha: ymlResp.sha,
+      });
+
+      showToast('Configuración guardada correctamente', 'ok');
+    } catch (e) {
+      showToast(`Error al guardar: ${e.message}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Guardar configuración';
+    }
+  }
+
+  // ── Modal ────────────────────────────────────────────────────
+  function showError(msg) {
+    const el = document.getElementById('modal-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function hideError() {
+    const el = document.getElementById('modal-error');
+    el.style.display = 'none';
+  }
+
+  async function setupSave() {
+    const token = document.getElementById('m-token').value.trim();
+    const owner = document.getElementById('m-owner').value.trim() || 'juanjo-geo';
+    const repo  = document.getElementById('m-repo').value.trim()  || 'calendar-sync';
+
+    if (!token) { showError('El token es requerido.'); return; }
+
+    hideError();
+    const btn = document.getElementById('modal-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>&nbsp;Validando...';
+
+    try {
+      await ghFetch('/user', token);
+      set(KEY_TOKEN, token);
+      set(KEY_OWNER, owner);
+      set(KEY_REPO,  repo);
+
+      document.getElementById('modal-overlay').classList.add('hidden');
+      syncConfigInputs();
+      refresh();
+    } catch (e) {
+      showError('Token inválido o sin permisos. Verifica y vuelve a intentar.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Guardar y continuar';
+    }
+  }
+
+  // ── Navigation ───────────────────────────────────────────────
+  let currentView = 'dashboard';
+
+  function navigate(view) {
+    document.querySelectorAll('[data-view]').forEach(a => {
+      a.classList.toggle('active', a.dataset.view === view);
+    });
+    document.querySelectorAll('[id^="view-"]').forEach(el => {
+      el.style.display = 'none';
+    });
+    const el = document.getElementById(`view-${view}`);
+    if (el) el.style.display = 'block';
+
+    const label = document.querySelector(`[data-view="${view}"]`)?.textContent?.trim() || view;
+    document.getElementById('header-breadcrumb').textContent = `/ ${label}`;
+    currentView = view;
+
+    if (view === 'health') renderHealth();
+    if (view === 'configuracion') loadSyncConfig();
+    if (view === 'monitor') loadMonitor();
+    if (view === 'consumo') loadConsumo();
+    if (view !== 'monitor') { clearInterval(_countdownTimer); _countdownTimer = null; }
+  }
+
+  // ── Dashboard ────────────────────────────────────────────────
+  async function refresh() {
+    document.getElementById('last-sync-label').textContent = 'Actualizando...';
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    try {
+      const data = await ghFetch(`/repos/${owner}/${repo}/actions/runs?per_page=20`);
+      const runs = data.workflow_runs || [];
+
+      renderStats(runs);
+      renderTable(runs);
+
+      const dot = document.getElementById('status-dot');
+      const latest = runs[0];
+      if (!latest) {
+        dot.className = '';
+        dot.title = 'Sin runs';
+      } else if (latest.conclusion === 'success') {
+        dot.className = 'ok';
+        dot.title = 'Último sync exitoso';
+      } else if (latest.status === 'in_progress') {
+        dot.className = '';
+        dot.title = 'Ejecutando...';
+      } else {
+        dot.className = 'err';
+        dot.title = `Último sync: ${latest.conclusion}`;
+      }
+
+      document.getElementById('last-sync-label').textContent = `Actualizado ${new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}`;
+    } catch (e) {
+      document.getElementById('last-sync-label').textContent = 'Error al cargar';
+      document.getElementById('stat-status').textContent = 'Error';
+    }
+  }
+
+  function renderStats(runs) {
+    const now = new Date();
+    const weekAgo = new Date(now - 7 * 864e5);
+    const week = runs.filter(r => new Date(r.created_at) >= weekAgo);
+    const success = week.filter(r => r.conclusion === 'success').length;
+
+    // last run time
+    const latest = runs[0];
+    if (latest) {
+      const d = new Date(latest.updated_at);
+      document.getElementById('stat-last-run').textContent = d.toLocaleDateString('es', { month: 'short', day: 'numeric' });
+      document.getElementById('stat-last-run-sub').textContent = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+
+      const status = latest.status === 'in_progress' ? 'En progreso' : (latest.conclusion || latest.status);
+      const colors = { success: '#38A169', failure: '#E53E3E', cancelled: '#718096' };
+      document.getElementById('stat-status').innerHTML =
+        `<span class="badge badge-${latest.conclusion === 'success' ? 'green' : latest.conclusion === 'failure' ? 'red' : 'gray'}">${status}</span>`;
+      document.getElementById('stat-status-sub').textContent = latest.name || 'Calendar Sync';
+    }
+
+    document.getElementById('stat-runs').textContent = week.length;
+    document.getElementById('stat-success').textContent = week.length ? `${Math.round(success / week.length * 100)}%` : '—';
+    document.getElementById('stat-success-sub').textContent = week.length ? `${success} / ${week.length} exitosos` : 'Sin datos esta semana';
+  }
+
+  function renderTable(runs) {
+    const loading = document.getElementById('runs-loading');
+    const empty   = document.getElementById('runs-empty');
+    const table   = document.getElementById('runs-table');
+    const tbody   = document.getElementById('runs-tbody');
+
+    loading.classList.add('hidden');
+
+    if (!runs.length) {
+      empty.classList.remove('hidden');
+      table.classList.add('hidden');
+      return;
+    }
+
+    empty.classList.add('hidden');
+    table.classList.remove('hidden');
+
+    tbody.innerHTML = runs.slice(0, 15).map(r => {
+      const start = new Date(r.created_at);
+      const end   = new Date(r.updated_at);
+      const secs  = Math.round((end - start) / 1000);
+      const dur   = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+      const startStr = start.toLocaleString('es', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+      const badgeCls = r.conclusion === 'success' ? 'badge-green' : r.conclusion === 'failure' ? 'badge-red' : r.status === 'in_progress' ? 'badge-blue' : 'badge-gray';
+      const label    = r.conclusion || r.status;
+      const trigger  = r.event === 'schedule' ? 'Cron' : r.event === 'workflow_dispatch' ? 'Manual' : r.event;
+
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px;">#${r.run_number}</td>
+        <td><span class="badge ${badgeCls}">${label}</span></td>
+        <td style="font-size:13px;">${startStr}</td>
+        <td style="font-size:13px;color:var(--muted);">${r.status === 'in_progress' ? '<span class="spinner"></span>' : dur}</td>
+        <td style="font-size:12px;color:var(--muted);">${trigger}</td>
+        <td><a href="${r.html_url}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">Ver logs →</a></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Health ───────────────────────────────────────────────────
+  async function renderHealth() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Reset loaders
+    ['hlt-secrets-loading','hlt-wf-loading','hlt-commit-loading'].forEach(id =>
+      document.getElementById(id).classList.remove('hidden')
+    );
+    ['hlt-secrets-body','hlt-wf-body','hlt-commit-body'].forEach(id =>
+      document.getElementById(id).classList.add('hidden')
+    );
+
+    // ── Secrets ──
+    const secretChecks = await Promise.all(
+      ['OUTLOOK_ICS_URL', 'GOOGLE_CREDENTIALS_JSON'].map(async name => {
+        try {
+          await ghFetch(`/repos/${owner}/${repo}/actions/secrets/${name}`);
+          return { name, ok: true };
+        } catch (e) {
+          return { name, ok: e.message.includes('404') || e.message.includes('Not Found') ? false : null };
+        }
+      })
+    );
+    document.getElementById('hlt-secrets-loading').classList.add('hidden');
+    const secretsBody = document.getElementById('hlt-secrets-body');
+    secretsBody.classList.remove('hidden');
+    secretsBody.innerHTML = secretChecks.map(c => `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;">
+        <span style="font-size:16px;">${c.ok === true ? '✅' : c.ok === false ? '❌' : '⚠️'}</span>
+        <div>
+          <div style="font-size:13px;font-weight:600;font-family:monospace;">${c.name}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:1px;">
+            ${c.ok === true ? 'Configurado' : c.ok === false ? 'No configurado' : 'Sin acceso para verificar'}
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // ── Workflow ──
+    try {
+      const wf = await ghFetch(`/repos/${owner}/${repo}/actions/workflows/sync.yml`);
+      document.getElementById('hlt-wf-loading').classList.add('hidden');
+      document.getElementById('hlt-wf-body').classList.remove('hidden');
+      const active = wf.state === 'active';
+      document.getElementById('hlt-wf-badge').innerHTML =
+        `<span class="badge ${active ? 'badge-green' : 'badge-red'}">${active ? 'Activo' : 'Deshabilitado'}</span>`;
+      document.getElementById('hlt-wf-name').textContent = wf.name || 'sync.yml';
+      document.getElementById('hlt-wf-updated').textContent =
+        `Modificado: ${new Date(wf.updated_at).toLocaleString('es')}`;
+    } catch (e) {
+      document.getElementById('hlt-wf-loading').classList.add('hidden');
+      document.getElementById('hlt-wf-body').classList.remove('hidden');
+      document.getElementById('hlt-wf-badge').innerHTML =
+        '<span class="badge badge-gray">Sin datos</span>';
+      document.getElementById('hlt-wf-name').textContent = `Error: ${e.message}`;
+    }
+
+    // ── Último commit ──
+    try {
+      const commits = await ghFetch(`/repos/${owner}/${repo}/commits?per_page=1`);
+      const c = commits[0];
+      document.getElementById('hlt-commit-loading').classList.add('hidden');
+      document.getElementById('hlt-commit-body').classList.remove('hidden');
+
+      const msg    = c.commit.message.split('\n')[0];
+      const author = c.commit.author.name;
+      const date   = new Date(c.commit.author.date);
+      const diffMs = Date.now() - date;
+      const diffMin = Math.floor(diffMs / 60000);
+      const ago = diffMin < 60
+        ? `hace ${diffMin} min`
+        : diffMin < 1440
+        ? `hace ${Math.floor(diffMin / 60)} h`
+        : `hace ${Math.floor(diffMin / 1440)} días`;
+
+      document.getElementById('hlt-commit-avatar').src   = c.author?.avatar_url || '';
+      document.getElementById('hlt-commit-msg').textContent    = msg;
+      document.getElementById('hlt-commit-author').textContent = author;
+      document.getElementById('hlt-commit-ago').textContent    = ago;
+      document.getElementById('hlt-commit-link').href          = c.html_url;
+    } catch (e) {
+      document.getElementById('hlt-commit-loading').classList.add('hidden');
+      document.getElementById('hlt-commit-body').classList.remove('hidden');
+      document.getElementById('hlt-commit-msg').textContent = `Error: ${e.message}`;
+    }
+  }
+
+  // ── Sync Now ─────────────────────────────────────────────────
+  async function syncNow() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    if (!confirm('¿Disparar el workflow de sync ahora?')) return;
+
+    const btn = document.getElementById('sync-now-btn');
+    btn.disabled = true;
+
+    try {
+      const dispatchRes = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync.yml/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${get(KEY_TOKEN)}`,
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ref: 'main' }),
+        }
+      );
+      if (!dispatchRes.ok) {
+        const err = await dispatchRes.json().catch(() => ({}));
+        throw new Error(err.message || `${dispatchRes.status} ${dispatchRes.statusText}`);
+      }
+      showToast('Sync iniciado — revisa GitHub Actions', 'ok');
+
+      // Countdown 30 s
+      let secs = 30;
+      const tick = () => {
+        btn.textContent = `⚡ Sincronizar Ahora (${secs}s)`;
+        if (--secs < 0) {
+          clearInterval(cdTimer);
+          btn.disabled = false;
+          btn.textContent = '⚡ Sincronizar Ahora';
+        }
+      };
+      tick();
+      const cdTimer = setInterval(tick, 1000);
+    } catch (e) {
+      showToast(`Error al disparar sync: ${e.message}`, 'err');
+      btn.disabled = false;
+      btn.textContent = '⚡ Sincronizar Ahora';
+    }
+  }
+
+  // ── Configuración ────────────────────────────────────────────
+  function syncConfigInputs() {
+    const t = document.getElementById('cfg-token');
+    const o = document.getElementById('cfg-owner');
+    const r = document.getElementById('cfg-repo');
+    if (t) t.value = get(KEY_TOKEN);
+    if (o) o.value = get(KEY_OWNER) || 'juanjo-geo';
+    if (r) r.value = get(KEY_REPO)  || 'calendar-sync';
+  }
+
+  async function saveConfig() {
+    const token = document.getElementById('cfg-token').value.trim();
+    const owner = document.getElementById('cfg-owner').value.trim() || 'juanjo-geo';
+    const repo  = document.getElementById('cfg-repo').value.trim()  || 'calendar-sync';
+    const msg   = document.getElementById('cfg-msg');
+
+    msg.style.display = 'none';
+
+    try {
+      if (token) await ghFetch('/user', token);
+      if (token) set(KEY_TOKEN, token);
+      set(KEY_OWNER, owner);
+      set(KEY_REPO,  repo);
+      msg.style.display = 'block';
+      msg.style.color = 'var(--green)';
+      msg.textContent = 'Configuración guardada correctamente.';
+      refresh();
+    } catch {
+      msg.style.display = 'block';
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Token inválido. Verifica y vuelve a intentar.';
+    }
+  }
+
+  // ── Monitor ──────────────────────────────────────────────────
+  let _countdownTimer = null;
+
+  async function loadMonitor() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Reset UI
+    ['mon-state-loading','mon-events-loading','mon-next-loading'].forEach(id => {
+      document.getElementById(id).classList.remove('hidden');
+    });
+    ['mon-state-body','mon-state-error','mon-events-empty','mon-events-table','mon-next-body'].forEach(id => {
+      document.getElementById(id).classList.add('hidden');
+    });
+
+    // ── 1. Load state.json ──
+    try {
+      const resp = await ghFetch(`/repos/${owner}/${repo}/contents/data/state.json`);
+      const state = JSON.parse(atob(resp.content.replace(/\s/g, '')));
+
+      renderStateCard(state);
+      renderEventsTable(state.events_map || {});
+    } catch (e) {
+      document.getElementById('mon-state-loading').classList.add('hidden');
+      document.getElementById('mon-events-loading').classList.add('hidden');
+      const err = document.getElementById('mon-state-error');
+      err.classList.remove('hidden');
+      err.textContent = `Error cargando state.json: ${e.message}`;
+      document.getElementById('mon-events-empty').classList.remove('hidden');
+    }
+
+    // ── 2. Load cron frequency and start countdown ──
+    try {
+      const ymlResp = await ghFetch(`/repos/${owner}/${repo}/contents/.github/workflows/sync.yml`);
+      const ymlText = decodeURIComponent(escape(atob(ymlResp.content.replace(/[^A-Za-z0-9+/=]/g, ''))));
+      const match = ymlText.match(/cron:\s*'?\*\/(\d+)/);
+      const freq = match ? parseInt(match[1]) : 20;
+
+      document.getElementById('mon-next-loading').classList.add('hidden');
+      document.getElementById('mon-next-body').classList.remove('hidden');
+
+      clearInterval(_countdownTimer);
+      _countdownTimer = setInterval(() => tickCountdown(freq), 1000);
+      tickCountdown(freq);
+    } catch (e) {
+      document.getElementById('mon-next-loading').classList.add('hidden');
+      document.getElementById('mon-next-body').classList.remove('hidden');
+      document.getElementById('mon-next-time').textContent = '—';
+      document.getElementById('mon-next-label').textContent = `Error: ${e.message}`;
+    }
+  }
+
+  function renderStateCard(state) {
+    document.getElementById('mon-state-loading').classList.add('hidden');
+    document.getElementById('mon-state-body').classList.remove('hidden');
+
+    const lastRun = state.last_run;
+    const dot = document.getElementById('mon-state-dot');
+    const timeEl = document.getElementById('mon-last-run-time');
+    const agoEl  = document.getElementById('mon-last-run-ago');
+
+    if (!lastRun) {
+      dot.style.background = 'var(--red)';
+      timeEl.textContent = 'Sin ejecuciones';
+      agoEl.textContent  = 'Nunca se ha ejecutado';
+    } else {
+      const d   = new Date(lastRun);
+      const now = new Date();
+      const diffMin = (now - d) / 60000;
+
+      // Format in Bogotá time
+      const bogotaStr = d.toLocaleString('es', {
+        timeZone: 'America/Bogota',
+        month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      });
+
+      timeEl.textContent = bogotaStr;
+      agoEl.textContent  = `hace ${Math.round(diffMin)} min`;
+
+      // Status color based on elapsed time
+      if (diffMin < 25)       { dot.style.background = 'var(--green)'; }
+      else if (diffMin < 120) { dot.style.background = '#D69E2E'; }
+      else                    { dot.style.background = 'var(--red)'; }
+    }
+
+    const eventsMap = state.events_map || {};
+    const fps       = state.event_fingerprints || {};
+    document.getElementById('mon-events-count').textContent = Object.keys(eventsMap).length;
+    document.getElementById('mon-fp-count').textContent     = Object.keys(fps).length;
+  }
+
+  function renderEventsTable(eventsMap) {
+    document.getElementById('mon-events-loading').classList.add('hidden');
+    const keys = Object.keys(eventsMap);
+
+    if (keys.length === 0) {
+      document.getElementById('mon-events-empty').classList.remove('hidden');
+      return;
+    }
+
+    // Take last 5 entries (keys are insertion-ordered)
+    const last5 = keys.slice(-5).reverse();
+    const tbody = document.getElementById('mon-events-tbody');
+
+    tbody.innerHTML = last5.map(outlookId => {
+      const googleId = eventsMap[outlookId];
+
+      // Format display label.
+      // Keys: "UID|2026-03-26T14:00:00-05:00" → "Evento sincronizado · 26 mar, 14:00"
+      //       plain UID (no pipe)              → "Evento · {googleId abreviado}"
+      let displayLabel;
+      const pipeIdx = outlookId.indexOf('|');
+      if (pipeIdx !== -1) {
+        const datePart = outlookId.slice(pipeIdx + 1);
+        try {
+          const d = new Date(datePart);
+          const formatted = d.toLocaleString('es', {
+            timeZone: 'America/Bogota',
+            day: 'numeric', month: 'short',
+            hour: '2-digit', minute: '2-digit',
+          });
+          displayLabel = `Evento sincronizado · ${formatted}`;
+        } catch (_) {
+          displayLabel = `Evento · ${datePart.slice(0, 10)}`;
+        }
+      } else {
+        displayLabel = `Evento · ${googleId.slice(0, 12)}…`;
+      }
+
+      // Google Calendar direct link
+      let calLink = '#';
+      try {
+        const b64 = btoa(googleId).replace(/=+$/, '');
+        calLink = `https://calendar.google.com/calendar/event?eid=${b64}`;
+      } catch (_) {}
+
+      return `<tr>
+        <td style="font-size:13px;" title="${outlookId}">${displayLabel}</td>
+        <td><a href="${calLink}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">
+          Ver en Google Calendar
+          <svg style="vertical-align:middle;margin-left:2px;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </a></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('mon-events-table').classList.remove('hidden');
+  }
+
+  function tickCountdown(freqMin) {
+    const now = new Date();
+    // Bogotá offset: UTC-5
+    const bogotaOffset = -5 * 60;
+    const bogotaMs = now.getTime() + (now.getTimezoneOffset() + bogotaOffset) * 60000;
+    const bogota = new Date(bogotaMs);
+
+    const hStart = 7, hEnd = 17, mEnd = 30;
+    const totalMinBogota = bogota.getHours() * 60 + bogota.getMinutes();
+    const inWindow = totalMinBogota >= hStart * 60 && totalMinBogota < hEnd * 60 + mEnd;
+
+    const badge = document.getElementById('mon-window-badge');
+    if (!inWindow) {
+      document.getElementById('mon-next-time').textContent = '—';
+      document.getElementById('mon-next-label').textContent = 'Fuera de ventana horaria (07:00–17:30 Bogotá)';
+      badge.innerHTML = '<span class="badge badge-gray">Inactivo</span>';
+      return;
+    }
+
+    badge.innerHTML = '<span class="badge badge-green">Dentro de ventana</span>';
+
+    // Next cron tick: cron runs at */freqMin UTC, so find next UTC minute divisible by freq
+    const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+    const secsPastMin = now.getUTCSeconds();
+    const nextTick = (Math.floor(utcMin / freqMin) + 1) * freqMin; // next multiple
+    const minsUntil = nextTick - utcMin;
+    const secsUntil = minsUntil * 60 - secsPastMin;
+
+    const mm = String(Math.floor(secsUntil / 60)).padStart(2, '0');
+    const ss = String(secsUntil % 60).padStart(2, '0');
+
+    document.getElementById('mon-next-time').textContent = `${mm}:${ss}`;
+    document.getElementById('mon-next-label').textContent =
+      `Próximo sync en ${minsUntil} min · frecuencia ${freqMin} min`;
+  }
+
+  // ── Consumo ──────────────────────────────────────────────────
+  async function loadConsumo() {
+    const owner = get(KEY_OWNER) || 'juanjo-geo';
+    const repo  = get(KEY_REPO)  || 'calendar-sync';
+
+    // Reset loaders
+    ['con-billing-loading','con-summary-loading','con-runs-loading'].forEach(id =>
+      document.getElementById(id).classList.remove('hidden')
+    );
+    ['con-billing-body','con-billing-error','con-summary-body',
+     'con-runs-table','con-runs-empty'].forEach(id =>
+      document.getElementById(id).classList.add('hidden')
+    );
+
+    // ── Runs del mes (única llamada; billing se calcula localmente) ──
+    try {
+      const now = new Date();
+      const data = await ghFetch(
+        `/repos/${owner}/${repo}/actions/runs?per_page=100`
+      );
+      const runs = (data.workflow_runs || []).filter(r => {
+        const d = new Date(r.created_at);
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      });
+      renderBillingFromRuns(runs, now);
+      renderSummary(runs, now);
+      renderConsumoTable(runs);
+    } catch (e) {
+      ['con-billing-loading','con-summary-loading','con-runs-loading'].forEach(id =>
+        document.getElementById(id).classList.add('hidden')
+      );
+      const err = document.getElementById('con-billing-error');
+      err.classList.remove('hidden');
+      err.textContent = `Error al cargar runs: ${e.message}`;
+    }
+  }
+
+  function renderBillingFromRuns(runs, now) {
+    document.getElementById('con-billing-loading').classList.add('hidden');
+    document.getElementById('con-billing-body').classList.remove('hidden');
+
+    // Sum durations of all completed runs this month, convert to minutes (ceil)
+    const totalSecs = runs
+      .filter(r => r.conclusion && r.updated_at && r.created_at)
+      .reduce((acc, r) => acc + (new Date(r.updated_at) - new Date(r.created_at)) / 1000, 0);
+    const used  = Math.ceil(totalSecs / 60);
+    const limit = 2000;
+    const pct   = Math.round(used / limit * 100);
+
+    document.getElementById('con-min-used').textContent  = used.toLocaleString();
+    document.getElementById('con-min-limit').textContent = `de ${limit.toLocaleString()} min`;
+    document.getElementById('con-min-pct').textContent   = `${pct}%`;
+
+    // Progress bar color
+    const bar = document.getElementById('con-progress-bar');
+    bar.style.width = `${Math.min(pct, 100)}%`;
+    bar.style.background = pct < 60 ? 'var(--green)' : pct < 85 ? '#D69E2E' : 'var(--red)';
+
+    // Reset date
+    const reset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const daysLeft = Math.ceil((reset - now) / 864e5);
+    document.getElementById('con-reset-date').textContent =
+      reset.toLocaleDateString('es', { day: 'numeric', month: 'long' });
+    document.getElementById('con-days-left').textContent = `en ${daysLeft} días`;
+
+    // Projection
+    const dayOfMonth = now.getDate();
+    const projected  = dayOfMonth > 0 ? Math.round(used / dayOfMonth * 30) : 0;
+    const projPct    = Math.round(projected / limit * 100);
+    document.getElementById('con-projection').textContent =
+      `A este ritmo usarás ~${projected.toLocaleString()} min este mes (${projPct}% del límite) · estimado basado en duración de runs`;
+  }
+
+  function renderSummary(runs, now) {
+    document.getElementById('con-summary-loading').classList.add('hidden');
+    document.getElementById('con-summary-body').classList.remove('hidden');
+
+    const ok   = runs.filter(r => r.conclusion === 'success').length;
+    const fail = runs.filter(r => r.conclusion === 'failure').length;
+
+    const durations = runs
+      .filter(r => r.conclusion && r.updated_at && r.created_at)
+      .map(r => (new Date(r.updated_at) - new Date(r.created_at)) / 1000);
+
+    const avg = durations.length
+      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+      : 0;
+    const max = durations.length ? Math.round(Math.max(...durations)) : 0;
+
+    document.getElementById('con-ok-runs').textContent   = ok;
+    document.getElementById('con-fail-runs').textContent = fail;
+    document.getElementById('con-avg-dur').textContent   = avg;
+    document.getElementById('con-max-dur').textContent   = max;
+
+    // Minutes per day: total seconds / 60 / day-of-month
+    const totalSecs = durations.reduce((a, b) => a + b, 0);
+    const minPerDay = now.getDate() > 0
+      ? (totalSecs / 60 / now.getDate()).toFixed(1)
+      : '0';
+    document.getElementById('con-min-per-day').textContent = `${minPerDay} min/día`;
+  }
+
+  function renderConsumoTable(runs) {
+    document.getElementById('con-runs-loading').classList.add('hidden');
+    const month10 = runs.slice(0, 10);
+
+    if (!month10.length) {
+      document.getElementById('con-runs-empty').classList.remove('hidden');
+      return;
+    }
+
+    const tbody = document.getElementById('con-runs-tbody');
+    tbody.innerHTML = month10.map(r => {
+      const start  = new Date(r.created_at);
+      const secs   = Math.round((new Date(r.updated_at) - start) / 1000);
+      const dur    = secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`;
+      const dateStr = start.toLocaleString('es', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      const bCls   = r.conclusion === 'success' ? 'badge-green' : r.conclusion === 'failure' ? 'badge-red' : 'badge-gray';
+      const label  = r.conclusion || r.status;
+      const trigger = r.event === 'schedule' ? 'Cron' : r.event === 'workflow_dispatch' ? 'Manual' : r.event;
+      return `<tr>
+        <td style="color:var(--muted);font-size:12px;">#${r.run_number}</td>
+        <td><span class="badge ${bCls}">${label}</span></td>
+        <td style="font-size:13px;">${dateStr}</td>
+        <td style="font-size:13px;color:var(--muted);">${r.status === 'in_progress' ? '<span class="spinner"></span>' : dur}</td>
+        <td style="font-size:12px;color:var(--muted);">${trigger}</td>
+        <td><a href="${r.html_url}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">Ver logs →</a></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('con-runs-table').classList.remove('hidden');
+  }
+
+  // ── Init ─────────────────────────────────────────────────────
+  function init() {
+    // Nav click handlers
+    document.querySelectorAll('[data-view]').forEach(a => {
+      a.addEventListener('click', () => navigate(a.dataset.view));
+    });
+
+    // Check token
+    if (get(KEY_TOKEN)) {
+      document.getElementById('modal-overlay').classList.add('hidden');
+      syncConfigInputs();
+      refresh();
+    }
+    // else: modal stays visible
+
+    // Enter key en modal
+    document.getElementById('m-token').addEventListener('keydown', e => {
+      if (e.key === 'Enter') setupSave();
+    });
+  }
+
+  return { init, refresh, setupSave, saveConfig, navigate, selectFreq, toggleDay, saveSyncConfig, loadMonitor, loadConsumo, syncNow };
+})();
+
+document.addEventListener('DOMContentLoaded', App.init);
+</script>
+</body>
+</html>
