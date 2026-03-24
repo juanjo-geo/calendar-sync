@@ -1395,24 +1395,41 @@ const App = (() => {
 
     tbody.innerHTML = last5.map(outlookId => {
       const googleId = eventsMap[outlookId];
-      // Abbreviate the outlook ID: show last 24 chars
-      const shortId = outlookId.length > 28
-        ? '...' + outlookId.slice(-24)
-        : outlookId;
 
-      // Build Google Calendar direct link
-      // Google event IDs in base64 need padding; encode as base64 for the eid param
+      // Format display label.
+      // Keys: "UID|2026-03-26T14:00:00-05:00" → "Evento sincronizado · 26 mar, 14:00"
+      //       plain UID (no pipe)              → "Evento · {googleId abreviado}"
+      let displayLabel;
+      const pipeIdx = outlookId.indexOf('|');
+      if (pipeIdx !== -1) {
+        const datePart = outlookId.slice(pipeIdx + 1);
+        try {
+          const d = new Date(datePart);
+          const formatted = d.toLocaleString('es', {
+            timeZone: 'America/Bogota',
+            day: 'numeric', month: 'short',
+            hour: '2-digit', minute: '2-digit',
+          });
+          displayLabel = `Evento sincronizado · ${formatted}`;
+        } catch (_) {
+          displayLabel = `Evento · ${datePart.slice(0, 10)}`;
+        }
+      } else {
+        displayLabel = `Evento · ${googleId.slice(0, 12)}…`;
+      }
+
+      // Google Calendar direct link
       let calLink = '#';
       try {
-        // The googleId from the API is already the raw event ID
         const b64 = btoa(googleId).replace(/=+$/, '');
         calLink = `https://calendar.google.com/calendar/event?eid=${b64}`;
       } catch (_) {}
 
       return `<tr>
-        <td style="font-size:12px;font-family:monospace;color:var(--muted);" title="${outlookId}">${shortId}</td>
+        <td style="font-size:13px;" title="${outlookId}">${displayLabel}</td>
         <td><a href="${calLink}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none;">
-          ${googleId.slice(0, 16)}… <svg style="vertical-align:middle" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          Ver en Google Calendar
+          <svg style="vertical-align:middle;margin-left:2px;" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
         </a></td>
       </tr>`;
     }).join('');
