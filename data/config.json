@@ -1,7 +1,7 @@
 {
   "timezone": "America/Bogota",
   "sync_window_days_past": 7,
-  "sync_window_days_future": 60,
+  "sync_window_days_future": 30,
   "schedule": {
     "allowed_days": [
       "Monday",
