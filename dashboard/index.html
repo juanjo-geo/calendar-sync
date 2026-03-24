@@ -1333,44 +1333,40 @@ const App = (() => {
       document.getElementById(id).classList.add('hidden')
     );
 
-    // ── Billing minutes ──
-    try {
-      const billing = await ghFetch(`/repos/${owner}/${repo}/actions/billing/minutes`);
-      renderBilling(billing);
-    } catch (e) {
-      document.getElementById('con-billing-loading').classList.add('hidden');
-      const err = document.getElementById('con-billing-error');
-      err.classList.remove('hidden');
-      err.textContent = `Error al cargar billing: ${e.message}`;
-    }
-
-    // ── Runs del mes ──
+    // ── Runs del mes (única llamada; billing se calcula localmente) ──
     try {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      // GitHub API filters by created date; fetch up to 100 and filter client-side
       const data = await ghFetch(
-        `/repos/${owner}/${repo}/actions/runs?per_page=100&created=>=${monthStart}`
+        `/repos/${owner}/${repo}/actions/runs?per_page=100`
       );
       const runs = (data.workflow_runs || []).filter(r => {
         const d = new Date(r.created_at);
         return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
       });
+      renderBillingFromRuns(runs, now);
       renderSummary(runs, now);
       renderConsumoTable(runs);
     } catch (e) {
-      document.getElementById('con-summary-loading').classList.add('hidden');
-      document.getElementById('con-runs-loading').classList.add('hidden');
+      ['con-billing-loading','con-summary-loading','con-runs-loading'].forEach(id =>
+        document.getElementById(id).classList.add('hidden')
+      );
+      const err = document.getElementById('con-billing-error');
+      err.classList.remove('hidden');
+      err.textContent = `Error al cargar runs: ${e.message}`;
     }
   }
 
-  function renderBilling(billing) {
+  function renderBillingFromRuns(runs, now) {
     document.getElementById('con-billing-loading').classList.add('hidden');
     document.getElementById('con-billing-body').classList.remove('hidden');
 
-    const used  = billing.total_minutes_used ?? 0;
-    const limit = billing.included_minutes   ?? 2000;
-    const pct   = limit > 0 ? Math.round(used / limit * 100) : 0;
+    // Sum durations of all completed runs this month, convert to minutes (ceil)
+    const totalSecs = runs
+      .filter(r => r.conclusion && r.updated_at && r.created_at)
+      .reduce((acc, r) => acc + (new Date(r.updated_at) - new Date(r.created_at)) / 1000, 0);
+    const used  = Math.ceil(totalSecs / 60);
+    const limit = 2000;
+    const pct   = Math.round(used / limit * 100);
 
     document.getElementById('con-min-used').textContent  = used.toLocaleString();
     document.getElementById('con-min-limit').textContent = `de ${limit.toLocaleString()} min`;
@@ -1382,7 +1378,6 @@ const App = (() => {
     bar.style.background = pct < 60 ? 'var(--green)' : pct < 85 ? '#D69E2E' : 'var(--red)';
 
     // Reset date
-    const now = new Date();
     const reset = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const daysLeft = Math.ceil((reset - now) / 864e5);
     document.getElementById('con-reset-date').textContent =
@@ -1392,9 +1387,9 @@ const App = (() => {
     // Projection
     const dayOfMonth = now.getDate();
     const projected  = dayOfMonth > 0 ? Math.round(used / dayOfMonth * 30) : 0;
-    const projPct    = limit > 0 ? Math.round(projected / limit * 100) : 0;
+    const projPct    = Math.round(projected / limit * 100);
     document.getElementById('con-projection').textContent =
-      `A este ritmo usarás ~${projected.toLocaleString()} min este mes (${projPct}% del límite)`;
+      `A este ritmo usarás ~${projected.toLocaleString()} min este mes (${projPct}% del límite) · estimado basado en duración de runs`;
   }
 
   function renderSummary(runs, now) {
